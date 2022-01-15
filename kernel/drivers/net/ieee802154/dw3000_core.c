@@ -1777,7 +1777,7 @@ static void dw3000_set_operational_state(struct dw3000 *dw,
  */
 int dw3000_poweron(struct dw3000 *dw)
 {
-	int timeout;
+	int __maybe_unused timeout;
 	int rc;
 
 	if (dw->is_powered) {
