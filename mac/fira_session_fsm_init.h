@@ -1,7 +1,7 @@
 /*
  * This file is part of the UWB stack for linux.
  *
- * Copyright (c) 2020-2021 Qorvo US, Inc.
+ * Copyright (c) 2022 Qorvo US, Inc.
  *
  * This software is provided under the GNU General Public License, version 2
  * (GPLv2), as well as under a Qorvo commercial license.
@@ -21,10 +21,11 @@
  * Qorvo. Please contact Qorvo to inquire about licensing terms.
  */
 
-#ifndef NET_MCPS802154_PING_PONG_REGION_H
-#define NET_MCPS802154_PING_PONG_REGION_H
+#ifndef NET_MCPS802154_FIRA_SESSION_FSM_INIT_H
+#define NET_MCPS802154_FIRA_SESSION_FSM_INIT_H
 
-int ping_pong_region_init(void);
-void ping_pong_region_exit(void);
+#include "fira_session_fsm.h"
 
-#endif /* NET_MCPS802154_PING_PONG_REGION_H */
+extern const struct fira_session_fsm_state fira_session_fsm_init;
+
+#endif /* NET_MCPS802154_FIRA_SESSION_FSM_INIT_H */

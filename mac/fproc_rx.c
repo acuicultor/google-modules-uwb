@@ -113,11 +113,11 @@ int mcps802154_fproc_rx_handle(struct mcps802154_local *local,
 			       struct mcps802154_access *access)
 {
 	int r;
-	struct mcps802154_rx_info rx_info = {
-		.flags = MCPS802154_RX_INFO_AACK,
+	struct mcps802154_rx_frame_config rx_config = {
+		.flags = MCPS802154_RX_FRAME_CONFIG_AACK,
 		.timeout_dtu = -1,
 	};
-	r = llhw_rx_enable(local, &rx_info, 0, 0);
+	r = llhw_rx_enable(local, &rx_config, 0, 0);
 	if (r)
 		return r;
 

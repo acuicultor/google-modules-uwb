@@ -1,7 +1,7 @@
 /*
  * This file is part of the UWB stack for linux.
  *
- * Copyright (c) 2020-2021 Qorvo US, Inc.
+ * Copyright (c) 2020-2022 Qorvo US, Inc.
  *
  * This software is provided under the GNU General Public License, version 2
  * (GPLv2), as well as under a Qorvo commercial license.
@@ -47,7 +47,7 @@ struct fira_session_params;
  * For an active session, it depends on the space left in messages, which is
  * determined by the session parameters.
  */
-bool fira_frame_check_n_controlees(struct fira_session *session,
+bool fira_frame_check_n_controlees(const struct fira_session *session,
 				   size_t n_controlees, bool active);
 
 /**
@@ -202,24 +202,34 @@ int fira_frame_decrypt(struct fira_local *local, struct fira_session *session,
 		       unsigned int header_len);
 
 /**
+ * fira_rx_frame_control_header_check() - Check control frame and consume
+ * header.
+ * @local: FiRa context.
+ * @slot: Corresponding slot.
+ * @skb: Frame buffer.
+ * @ie_get: Context used to read IE, must be zero initialized.
+ * @sts_index: STS index received.
+ *
+ * Return: Session context or NULL.
+ */
+struct fira_session *fira_rx_frame_control_header_check(
+	struct fira_local *local, const struct fira_slot *slot,
+	struct sk_buff *skb, struct mcps802154_ie_get_context *ie_get,
+	u32 *sts_index);
+
+/**
  * fira_frame_header_check_decrypt() - Check and consume header, and decrypt
  * payload.
  * @local: FiRa context.
  * @slot: Corresponding slot.
  * @skb: Frame buffer.
  * @ie_get: Context used to read IE, must be zero initialized.
- * @allow_resync_sts_index: If not NULL, allow STS index resynchronisation and
- * store received STS index at given address, if NULL, forbid resynchronisation.
- * @allow_resync_session: If not NULL, allow session synchronisation and store received
- * session at given address, if NULL, forbid resynchronisation.
  *
  * Return: 0 or error.
  */
 int fira_frame_header_check_decrypt(struct fira_local *local,
 				    const struct fira_slot *slot,
 				    struct sk_buff *skb,
-				    struct mcps802154_ie_get_context *ie_get,
-				    u32 *allow_resync_sts_index,
-				    struct fira_session **allow_resync_session);
+				    struct mcps802154_ie_get_context *ie_get);
 
 #endif /* FIRA_FRAME_H */

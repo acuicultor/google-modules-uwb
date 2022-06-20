@@ -136,16 +136,21 @@ int mcps802154_fproc_tx_handle(struct mcps802154_local *local,
 			       struct mcps802154_access *access)
 {
 	int r;
+	u8 ack_req;
+	struct mcps802154_tx_frame_config tx_config = {};
 	struct sk_buff *skb = access->ops->tx_get_frame(access, 0);
-	u8 ack_req = skb->data[0] & IEEE802154_FC_ACK_REQ;
-	struct mcps802154_tx_frame_info tx_info = {
-		.flags = 0,
-		.rx_enable_after_tx_dtu =
-			ack_req ? IEEE802154_AIFS_DURATION_SYMBOLS *
-					  local->llhw.symbol_dtu :
-				  0,
-	};
-	r = llhw_tx_frame(local, skb, &tx_info, 0, 0);
+
+	if (!skb)
+		return -ENOMEM;
+
+	ack_req = skb->data[0] & IEEE802154_FC_ACK_REQ;
+	if (ack_req) {
+		tx_config.rx_enable_after_tx_dtu =
+			IEEE802154_AIFS_DURATION_SYMBOLS *
+			local->llhw.symbol_dtu;
+	}
+
+	r = llhw_tx_frame(local, skb, &tx_config, 0, 0);
 	if (r) {
 		access->ops->tx_return(
 			access, 0, skb,
