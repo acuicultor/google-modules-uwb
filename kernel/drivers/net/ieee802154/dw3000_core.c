@@ -7642,7 +7642,7 @@ static inline int dw3000_isr_handle_rxto_event(struct dw3000 *dw, u32 status)
 		return 0;
 	/* Update power statistics */
 	end_dtu = dw->power.rx_start + (dw->data.rx_timeout_pac + 1) *
-					       dw->chips_per_pac *
+					       dw->chips_per_pac /
 					       DW3000_CHIP_PER_DTU;
 	dw3000_power_stats(dw, DW3000_PWR_IDLE, end_dtu);
 	/* Report statistics */
