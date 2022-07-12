@@ -55,7 +55,6 @@ void mcps802154_fproc_access(struct mcps802154_local *local,
 			     u32 next_timestamp_dtu)
 {
 	struct mcps802154_access *access;
-	int r;
 
 	if (!local->start_stop_request) {
 		mcps802154_fproc_stopped_handle(local);
@@ -73,30 +72,30 @@ void mcps802154_fproc_access(struct mcps802154_local *local,
 
 	switch (access->method) {
 	case MCPS802154_ACCESS_METHOD_NOTHING:
-		r = mcps802154_fproc_nothing_handle(local, access);
+		access->error = mcps802154_fproc_nothing_handle(local, access);
 		break;
 	case MCPS802154_ACCESS_METHOD_IDLE:
-		r = mcps802154_fproc_idle_handle(local, access);
+		access->error = mcps802154_fproc_idle_handle(local, access);
 		break;
 	case MCPS802154_ACCESS_METHOD_IMMEDIATE_RX:
-		r = mcps802154_fproc_rx_handle(local, access);
+		access->error = mcps802154_fproc_rx_handle(local, access);
 		break;
 	case MCPS802154_ACCESS_METHOD_IMMEDIATE_TX:
-		r = mcps802154_fproc_tx_handle(local, access);
+		access->error = mcps802154_fproc_tx_handle(local, access);
 		break;
 	case MCPS802154_ACCESS_METHOD_MULTI:
-		r = mcps802154_fproc_multi_handle(local, access);
+		access->error = mcps802154_fproc_multi_handle(local, access);
 		break;
 	case MCPS802154_ACCESS_METHOD_VENDOR:
-		r = mcps802154_fproc_vendor_handle(local, access);
+		access->error = mcps802154_fproc_vendor_handle(local, access);
 		break;
 	default:
-		r = -1;
+		access->error = -1;
 	}
 
-	if (r) {
+	if (access->error) {
 		mcps802154_fproc_access_done(local, true);
-		if (r == -ETIME)
+		if (access->error == -ETIME)
 			mcps802154_fproc_access_now(local);
 		else
 			mcps802154_fproc_broken_handle(local);

@@ -107,15 +107,13 @@ static void mcps802154_fproc_multi_next(struct mcps802154_local *local,
 					struct mcps802154_access *access,
 					size_t frame_idx)
 {
-	int r;
-
 	frame_idx++;
 	if (access->ops->access_extend && frame_idx == access->n_frames) {
 		frame_idx = 0;
 		access->n_frames = 0;
 		access->ops->access_extend(access);
-		r = mcps802154_fproc_multi_check_frames(local, access, 0);
-		if (r) {
+		access->error = mcps802154_fproc_multi_check_frames(local, access, 0);
+		if (access->error) {
 			mcps802154_fproc_access_done(local, true);
 			mcps802154_fproc_broken_handle(local);
 			return;
@@ -123,19 +121,19 @@ static void mcps802154_fproc_multi_next(struct mcps802154_local *local,
 	}
 	if (frame_idx < access->n_frames) {
 		/* Next frame. */
-		r = mcps802154_fproc_multi_handle_frame(local, access,
+		access->error = mcps802154_fproc_multi_handle_frame(local, access,
 							frame_idx);
-		if (r) {
+		if (access->error) {
 			mcps802154_fproc_access_done(local, true);
-			if (r == -ETIME)
+			if (access->error == -ETIME)
 				mcps802154_fproc_access_now(local);
 			else
 				mcps802154_fproc_broken_handle(local);
 		}
 	} else {
-		r = mcps802154_fproc_multi_restore(local, access);
-		mcps802154_fproc_access_done(local, !!r);
-		if (r) {
+		access->error = mcps802154_fproc_multi_restore(local, access);
+		mcps802154_fproc_access_done(local, !!access->error);
+		if (access->error) {
 			mcps802154_fproc_broken_handle(local);
 			return;
 		}
@@ -155,19 +153,18 @@ static void mcps802154_fproc_multi_rx_rx_frame(struct mcps802154_local *local)
 	struct mcps802154_access *access = local->fproc.access;
 	size_t frame_idx = local->fproc.frame_idx;
 	struct mcps802154_access_frame *frame = &access->frames[frame_idx];
-	int r;
 
 	/* Read frame. */
 	struct sk_buff *skb = NULL;
 	struct mcps802154_rx_frame_info info = {
 		.flags = frame->rx.frame_info_flags_request,
 	};
-	r = llhw_rx_get_frame(local, &skb, &info);
-	if (!r)
+	access->error =  llhw_rx_get_frame(local, &skb, &info);
+	if (!access->error)
 		access->ops->rx_frame(access, frame_idx, skb, &info,
 				      MCPS802154_RX_ERROR_NONE);
 
-	if (r && r != -EBUSY) {
+	if (access->error && access->error != -EBUSY) {
 		mcps802154_fproc_access_done(local, true);
 		mcps802154_fproc_broken_handle(local);
 	} else {
@@ -215,16 +212,15 @@ mcps802154_fproc_multi_rx_schedule_change(struct mcps802154_local *local)
 
 	if (frame->rx.frame_config.timeout_dtu == -1) {
 		/* Disable RX. */
-		int r = llhw_rx_disable(local);
-
-		if (r == -EBUSY)
+		access->error = llhw_rx_disable(local);
+		if (access->error == -EBUSY)
 			/* Wait for RX result. */
 			return;
 
 		access->ops->rx_frame(access, frame_idx, NULL, NULL,
 				      MCPS802154_RX_ERROR_TIMEOUT);
-		if (r) {
-			mcps802154_fproc_access_done(local, r);
+		if (access->error) {
+			mcps802154_fproc_access_done(local, access->error);
 			mcps802154_fproc_broken_handle(local);
 		} else {
 			/* Next. */

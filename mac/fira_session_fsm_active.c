@@ -780,7 +780,7 @@ static void fira_session_fsm_active_access_done(struct fira_local *local,
 	/* Update local. */
 	local->current_session = NULL;
 
-	if (error) {
+	if ((error) && (session->last_error != -ETIME)) {
 		/*
 		 * FIXME:
 		 * Why corrupt all status, the last slot_index is not

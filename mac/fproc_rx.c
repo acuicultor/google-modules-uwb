@@ -48,15 +48,14 @@ static const struct mcps802154_fproc_state mcps802154_fproc_rx_wait_tx_done = {
 static void mcps802154_fproc_rx_rx_frame(struct mcps802154_local *local)
 {
 	struct mcps802154_access *access = local->fproc.access;
-	int r;
 
 	/* Read frame. */
 	struct sk_buff *skb = NULL;
 	struct mcps802154_rx_frame_info info = {
 		.flags = MCPS802154_RX_FRAME_INFO_LQI,
 	};
-	r = llhw_rx_get_frame(local, &skb, &info);
-	if (!r) {
+	access->error = llhw_rx_get_frame(local, &skb, &info);
+	if (!access->error) {
 		access->ops->rx_frame(access, 0, skb, &info,
 				      MCPS802154_RX_ERROR_NONE);
 		/* If auto-ack was sent, wait for tx_done. */
@@ -66,9 +65,9 @@ static void mcps802154_fproc_rx_rx_frame(struct mcps802154_local *local)
 			return;
 		}
 	}
-	mcps802154_fproc_access_done(local, !!r);
+	mcps802154_fproc_access_done(local, !!access->error);
 
-	if (r && r != -EBUSY)
+	if (access->error && access->error != -EBUSY)
 		mcps802154_fproc_broken_handle(local);
 	else
 		/* Next access. */
@@ -79,23 +78,21 @@ static void mcps802154_fproc_rx_rx_error(struct mcps802154_local *local,
 					 enum mcps802154_rx_error_type error)
 {
 	mcps802154_fproc_access_done(local, true);
-
 	/* Next access. */
 	mcps802154_fproc_access_now(local);
 }
 
 static void mcps802154_fproc_rx_schedule_change(struct mcps802154_local *local)
 {
-	int r;
-
+	struct mcps802154_access *access = local->fproc.access;
 	/* Disable RX. */
-	r = llhw_rx_disable(local);
-	if (r == -EBUSY)
+	access->error = llhw_rx_disable(local);
+	if (access->error == -EBUSY)
 		/* Wait for RX result. */
 		return;
 
-	mcps802154_fproc_access_done(local, !!r);
-	if (r)
+	mcps802154_fproc_access_done(local, !!access->error);
+	if (access->error)
 		mcps802154_fproc_broken_handle(local);
 	else
 		/* Next access. */
@@ -112,14 +109,13 @@ static const struct mcps802154_fproc_state mcps802154_fproc_rx = {
 int mcps802154_fproc_rx_handle(struct mcps802154_local *local,
 			       struct mcps802154_access *access)
 {
-	int r;
 	struct mcps802154_rx_frame_config rx_config = {
 		.flags = MCPS802154_RX_FRAME_CONFIG_AACK,
 		.timeout_dtu = -1,
 	};
-	r = llhw_rx_enable(local, &rx_config, 0, 0);
-	if (r)
-		return r;
+	access->error = llhw_rx_enable(local, &rx_config, 0, 0);
+	if (access->error)
+		return access->error;
 
 	mcps802154_fproc_change_state(local, &mcps802154_fproc_rx);
 

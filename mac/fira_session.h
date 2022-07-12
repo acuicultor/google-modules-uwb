@@ -368,6 +368,10 @@ struct fira_session {
 		 */
 		u32 last_rotation_block_index;
 	} sts;
+	/*
+	 * @last_error: last error that occurred during the active session.
+	 */
+	int last_error;
 };
 
 /**

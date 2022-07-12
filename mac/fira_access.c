@@ -846,6 +846,9 @@ static void fira_access_done(struct mcps802154_access *access, bool error)
 
 	trace_region_fira_access_done(local, session, access->duration_dtu,
 				      error);
+
+	/* propagate llhw error to fira session */
+	session->last_error = access->error;
 	fira_session_fsm_access_done(local, session, error);
 	fira_diagnostic_free(local);
 	if (!error)

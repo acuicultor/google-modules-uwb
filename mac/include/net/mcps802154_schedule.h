@@ -218,6 +218,10 @@ struct mcps802154_access {
 	 * start of a multiple frames access.
 	 */
 	const struct mcps802154_hrp_uwb_params *hrp_uwb_params;
+	/**
+	 * @error: contain the error from the llhw in order to propagate it to upper regions.
+	 */
+	int error;
 };
 
 /**
