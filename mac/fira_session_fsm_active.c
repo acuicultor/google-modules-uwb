@@ -247,12 +247,9 @@ static void forward_to_next_ranging(struct fira_session *session, int n_ranging)
 	int blocks_per_ranging = session->block_stride_len + 1;
 	int add_blocks = n_ranging * blocks_per_ranging;
 	int duration_dtu = add_blocks * params->block_duration_dtu;
-	int slots_per_block =
-		params->block_duration_dtu / params->slot_duration_dtu;
 
 	session->block_index += add_blocks;
 	session->block_start_dtu += duration_dtu;
-	session->sts_index += add_blocks * slots_per_block;
 	session->n_ranging_round_retry += n_ranging;
 }
 
@@ -277,21 +274,25 @@ static void ranging_round_done(struct fira_local *local,
 	case FIRA_DEVICE_TYPE_CONTROLLER:
 		/* Update controlee's states between two ranging round. */
 		fira_session_update_controlees(local, session);
+		fira_sts_rotate_keys(session);
 		break;
 	case FIRA_DEVICE_TYPE_CONTROLEE:
 		/* Did the controlee's access lose the synchronisation? */
 		session->controlee.synchronised =
 			is_controlee_synchronised(local, session);
+		if (session->controlee.synchronised)
+			fira_sts_rotate_keys(session);
 		break;
 	}
 
 	fira_session_report(local, session, report_info);
 
-	if (report_info->stopped)
+	if (report_info->stopped) {
 		fira_session_fsm_change_state(local, session,
 					      &fira_session_fsm_idle);
-	else
+	} else {
 		forward_to_next_ranging(session, 1);
+	}
 }
 
 static void fira_session_fsm_active_enter(struct fira_local *local,
@@ -321,6 +322,7 @@ static void fira_session_fsm_active_enter(struct fira_local *local,
 static void fira_session_fsm_active_leave(struct fira_local *local,
 					  struct fira_session *session)
 {
+	fira_sts_deinit(session);
 	list_move(&session->entry, &local->inactive_sessions);
 	fira_session_restart_controlees(session);
 }

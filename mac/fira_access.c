@@ -26,6 +26,7 @@
 #include "fira_session.h"
 #include "fira_frame.h"
 #include "fira_trace.h"
+#include "fira_sts.h"
 
 #include <asm/unaligned.h>
 #include <linux/string.h>
@@ -102,13 +103,9 @@ static void fira_access_setup_frame(struct fira_local *local,
 	bool is_first_frame = slot->message_id == FIRA_MESSAGE_ID_CONTROL;
 	bool request_rssi = session->params.report_rssi;
 	if (is_rframe) {
-		memcpy(sts_params->v, session->crypto.sts_v, AES_BLOCK_SIZE);
-		put_unaligned_be32(slot->index,
-				   sts_params->v + AES_BLOCK_SIZE / 2);
-		memcpy(sts_params->key,
-		       session->crypto.derived_authentication_key,
-		       AES_KEYSIZE_128);
-		/* Constant for the moment. */
+		fira_sts_get_sts_params(session, slot->index, sts_params->v,
+					sizeof(sts_params->v), sts_params->key,
+					sizeof(sts_params->key));
 		sts_params->n_segs = params->number_of_sts_segments;
 		sts_params->seg_len =
 			params->sts_length == FIRA_STS_LENGTH_128 ?
@@ -209,28 +206,27 @@ static void fira_access_setup_frame(struct fira_local *local,
 	}
 }
 
-static void fira_controlee_resync(struct fira_session *session, u32 sts_index,
-				  u32 timestamp_dtu)
+static void fira_controlee_resync(struct fira_session *session,
+				  u32 phy_sts_index, u32 timestamp_dtu)
 {
+	u32 block_idx, round_idx, slot_idx;
+	int block_start_timestamp_dtu;
 	const struct fira_session_params *params = &session->params;
-	/* Variable for session resync. */
-	int slots_per_block =
-		params->block_duration_dtu / params->slot_duration_dtu;
-	int sts_offset = sts_index - session->crypto.sts_index_init;
-	int block_index = sts_offset / slots_per_block;
-	int slot_index = sts_offset - block_index * slots_per_block;
-	int round_index = slot_index / params->round_duration_slots;
-	int block_start_dtu =
-		timestamp_dtu - slot_index * params->slot_duration_dtu;
+
+	fira_sts_convert_phy_sts_idx_to_time_indexes(
+		session, phy_sts_index, &block_idx, &round_idx, &slot_idx);
+	block_start_timestamp_dtu =
+		timestamp_dtu -
+		(round_idx * session->params.round_duration_slots + slot_idx) *
+			params->slot_duration_dtu;
 
 	/* Update the session. */
-	session->block_start_dtu = block_start_dtu;
-	session->block_index = block_index;
-	session->sts_index = sts_index - slot_index;
-	session->round_index = round_index;
+	session->block_start_dtu = block_start_timestamp_dtu;
+	session->block_index = block_idx;
+	session->round_index = round_idx;
 	session->controlee.synchronised = true;
 	session->controlee.next_round_index_valid = false;
-	session->controlee.block_index_sync = block_index;
+	session->controlee.block_index_sync = block_idx;
 }
 
 static bool fira_rx_sts_good(struct fira_local *local,
@@ -531,11 +527,13 @@ static void fira_rx_frame_control(struct fira_local *local,
 	struct mcps802154_ie_get_context ie_get = {};
 	const struct fira_session_params *params = NULL;
 	struct fira_session *session;
+	int header_len;
+	__le16 src_short_addr;
 	int last_slot_index = 0;
 	int offset_in_access_duration_dtu;
 	int left_duration_dtu;
 	unsigned n_slots;
-	u32 sts_index;
+	u32 phy_sts_index;
 	u8 *header;
 	int r;
 
@@ -551,14 +549,22 @@ static void fira_rx_frame_control(struct fira_local *local,
 	/* Read the header to capture the session context. */
 	header = skb->data;
 	session = fira_rx_frame_control_header_check(local, slot, skb, &ie_get,
-						     &sts_index);
+						     &phy_sts_index);
 	if (!session)
 		goto failed;
+
+	fira_controlee_resync(session, phy_sts_index, info->timestamp_dtu);
+
 	params = &session->params;
 	ri->rx_ctx = session->rx_ctx[0];
 
+	header_len = skb->data - header;
+	src_short_addr = slot->controller_tx ? local->dst_short_addr :
+					       slot->controlee->short_addr;
+
 	/* Continue to decode the frame. */
-	r = fira_frame_decrypt(local, session, slot, skb, skb->data - header);
+	r = fira_sts_decrypt_frame(session, skb, header_len, src_short_addr,
+				   slot->index);
 	if (r)
 		goto failed;
 	r = fira_frame_control_payload_check(local, skb, &ie_get, &n_slots,
@@ -567,7 +573,6 @@ static void fira_rx_frame_control(struct fira_local *local,
 	if (!r)
 		goto failed;
 
-	fira_controlee_resync(session, sts_index, info->timestamp_dtu);
 	left_duration_dtu =
 		access->duration_dtu - offset_in_access_duration_dtu;
 
@@ -763,6 +768,7 @@ static struct sk_buff *fira_tx_get_frame(struct mcps802154_access *access,
 	const struct fira_session_params *params = &session->params;
 	const struct fira_slot *slot = &local->slots[frame_idx];
 	struct sk_buff *skb;
+	int header_len;
 
 	trace_region_fira_tx_get_frame(session, slot->message_id);
 	if (params->rframe_config == FIRA_RFRAME_CONFIG_SP3 &&
@@ -800,7 +806,11 @@ static struct sk_buff *fira_tx_get_frame(struct mcps802154_access *access,
 		/* LCOV_EXCL_STOP */
 	}
 
-	if (fira_frame_encrypt(local, slot, skb)) {
+	header_len = mcps802154_ie_put_end(skb, false);
+	WARN_ON(header_len < 0);
+
+	if (fira_sts_encrypt_frame(local->current_session, skb, header_len,
+				   local->src_short_addr, slot->index)) {
 		kfree_skb(skb);
 		return NULL;
 	}
@@ -908,8 +918,6 @@ fira_get_access_controller(struct fira_local *local,
 	const struct fira_session_params *params = &session->params;
 	const struct fira_measurement_sequence_step *step =
 		fira_session_get_meas_seq_step(session);
-	int slots_per_block =
-		params->block_duration_dtu / params->slot_duration_dtu;
 	struct mcps802154_access *access = &local->access;
 	struct mcps802154_access_frame *frame;
 	struct mcps802154_sts_params *sts_params;
@@ -937,7 +945,6 @@ fira_get_access_controller(struct fira_local *local,
 	session->block_start_dtu = fsd->block_start_dtu;
 	session->block_index += fsd->add_blocks;
 	session->block_stride_len = params->block_stride_len;
-	session->sts_index += fsd->add_blocks * slots_per_block;
 	session->round_index = fsd->round_index;
 	session->controller.next_block_index =
 		session->block_index + session->block_stride_len + 1;

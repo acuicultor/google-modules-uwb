@@ -76,9 +76,8 @@ fira_session_get_state_id(const struct fira_session *session)
 int fira_session_fsm_check_parameters(const struct fira_session *session,
 				      struct nlattr **attrs)
 {
-	if (session->state->check_parameters)
-		return session->state->check_parameters(session, attrs);
-	return 0;
+	WARN_ON(!session->state->check_parameters);
+	return session->state->check_parameters(session, attrs);
 }
 
 void fira_session_fsm_parameters_updated(struct fira_local *local,

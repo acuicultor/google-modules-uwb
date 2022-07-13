@@ -36,8 +36,6 @@ mcps802154-y := \
 
 mcps802154_region_fira-y := \
 	fira_access.o \
-	fira_aead.o \
-	fira_cmac.o \
 	fira_crypto.o \
 	fira_round_hopping_sequence.o \
 	fira_round_hopping_crypto.o \
@@ -49,7 +47,9 @@ mcps802154_region_fira-y := \
 	fira_session_fsm_init.o \
 	fira_session_fsm_idle.o \
 	fira_session_fsm_active.o \
-	fira_trace.o
+	fira_sts.o \
+	fira_trace.o \
+	mcps_crypto.o
 
 mcps802154_region_nfcc_coex-y := \
 	nfcc_coex_access.o \

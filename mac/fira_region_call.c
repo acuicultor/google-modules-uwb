@@ -34,6 +34,7 @@
 #include "fira_access.h"
 #include "fira_region_call.h"
 #include "fira_trace.h"
+#include "fira_sts.h"
 
 static const struct nla_policy fira_call_nla_policy[FIRA_CALL_ATTR_MAX + 1] = {
 	[FIRA_CALL_ATTR_SESSION_ID] = { .type = NLA_U32 },
@@ -97,7 +98,7 @@ static const struct nla_policy fira_session_param_nla_policy[FIRA_SESSION_PARAM_
 		NLA_POLICY_MAX(NLA_U8, FIRA_BOOLEAN_MAX),
 	[FIRA_SESSION_PARAM_ATTR_MEASUREMENT_SEQUENCE] = { .type = NLA_NESTED_ARRAY },
 	[FIRA_SESSION_PARAM_ATTR_STS_CONFIG] =
-		NLA_POLICY_MAX(NLA_U8, FIRA_STS_CONFIG_DYNAMIC_INDIVIDUAL_KEY),
+		NLA_POLICY_MAX(NLA_U8, FIRA_STS_MODE_PROVISIONED_INDIVIDUAL_KEY),
 	[FIRA_SESSION_PARAM_ATTR_SUB_SESSION_ID] = { .type = NLA_U32 },
 	[FIRA_SESSION_PARAM_ATTR_VUPPER64] =
 		NLA_POLICY_EXACT_LEN(FIRA_VUPPER64_SIZE),
@@ -431,6 +432,7 @@ static int fira_session_set_parameters(struct fira_local *local, u32 session_id,
 	r = check_parameter_proximity_range(&session->params, attrs);
 	if (r)
 		return r;
+
 	if (attrs[FIRA_SESSION_PARAM_ATTR_MEASUREMENT_SEQUENCE]) {
 		r = fira_session_params_set_measurement_sequence(
 			attrs[FIRA_SESSION_PARAM_ATTR_MEASUREMENT_SEQUENCE],
@@ -508,6 +510,15 @@ static int fira_session_set_parameters(struct fira_local *local, u32 session_id,
 	}
 	/* STS and crypto parameters. */
 	PMEMCPY(VUPPER64, vupper64);
+	if (attrs[FIRA_SESSION_PARAM_ATTR_SESSION_KEY]) {
+		struct nlattr *attr =
+			attrs[FIRA_SESSION_PARAM_ATTR_SESSION_KEY];
+		memcpy(p->session_key, nla_data(attr), nla_len(attr));
+		p->session_key_len = nla_len(attr);
+	}
+	P(STS_CONFIG, sts_config, u8, x);
+	P(KEY_ROTATION, key_rotation, u8, x);
+	P(KEY_ROTATION_RATE, key_rotation_rate, u8, x);
 	/* Report parameters. */
 	P(AOA_RESULT_REQ, aoa_result_req, u8, !!x);
 	P(REPORT_TOF, report_tof, u8, !!x);
@@ -519,7 +530,7 @@ static int fira_session_set_parameters(struct fira_local *local, u32 session_id,
 	P(DATA_VENDOR_OUI, data_vendor_oui, u32, x);
 
 	PMEMNCPY(DATA_PAYLOAD, data_payload, data_payload_len);
-	/* Increment sequence number if a new data is received. */
+	/* Increment payload sequence number if a new data is received. */
 	if (attrs[FIRA_SESSION_PARAM_ATTR_DATA_PAYLOAD])
 		p->data_payload_seq++;
 	/* Diagnostics */
@@ -746,6 +757,9 @@ static int fira_session_get_parameters(struct fira_local *local, u32 session_id)
 		goto nla_put_failure;
 	/* STS and crypto parameters. */
 	PMEMCPY(VUPPER64, vupper64);
+	P(STS_CONFIG, sts_config, u8, x);
+	P(KEY_ROTATION, key_rotation, u8, x);
+	P(KEY_ROTATION_RATE, key_rotation_rate, u8, x);
 	/* Report parameters. */
 	P(AOA_RESULT_REQ, aoa_result_req, u8, !!x);
 	P(REPORT_TOF, report_tof, u8, !!x);
@@ -999,6 +1013,7 @@ int fira_get_capabilities(struct fira_local *local,
 	struct sk_buff *msg;
 	struct nlattr *capabilities;
 	u64 hw_flags = local->llhw->flags;
+	u32 sts_caps = fira_crypto_get_capabilities();
 
 	if (!info)
 		return 0;
@@ -1032,6 +1047,11 @@ int fira_get_capabilities(struct fira_local *local,
 		if (hw_flags & (hw_flag)) \
 			F(name);          \
 	} while (0)
+#define S(mode)                                             \
+	do {                                                \
+		if (sts_caps & (1 << FIRA_STS_MODE_##mode)) \
+			F(STS_##mode);                      \
+	} while (0)
 
 	/* Main session capabilities. */
 	P(FIRA_PHY_VERSION_RANGE, u32, 0x01010101);
@@ -1046,8 +1066,6 @@ int fira_get_capabilities(struct fira_local *local,
 	/* Behaviour. */
 	F(ROUND_HOPPING);
 	F(BLOCK_STRIDING);
-	/* STS and crypto capabilities. */
-	F(STS_CONFIG_STATIC);
 	/* Radio. */
 	P(CHANNEL_NUMBER, u16,
 	  local->llhw->hw->phy->supported
@@ -1080,6 +1098,12 @@ int fira_get_capabilities(struct fira_local *local,
 	/* Antenna. */
 	P(RX_ANTENNA_PAIRS, u32, local->llhw->rx_antenna_pairs);
 	P(TX_ANTENNAS, u32, local->llhw->tx_antennas);
+	/* STS and crypto capabilities. */
+	S(STATIC);
+	S(DYNAMIC);
+	S(DYNAMIC_INDIVIDUAL_KEY);
+	S(PROVISIONED);
+	S(PROVISIONED_INDIVIDUAL_KEY);
 	/* Report. */
 	C(AOA_AZIMUTH, MCPS802154_LLHW_AOA_AZIMUTH);
 	C(AOA_AZIMUTH_FULL, MCPS802154_LLHW_AOA_AZIMUTH_FULL);

@@ -32,7 +32,6 @@
 #include <net/fira_region_nl.h>
 
 #include "fira_session.h"
-#include "fira_crypto.h"
 #include "fira_round_hopping_sequence.h"
 #include "fira_access.h"
 #include "fira_frame.h"
@@ -551,6 +550,7 @@ struct fira_session *fira_session_new(struct fira_local *local, u32 session_id)
 	params->round_hopping = false;
 	params->priority = FIRA_PRIORITY_DEFAULT;
 	params->sts_length = FIRA_STS_LENGTH_64;
+	params->sts_config = FIRA_STS_MODE_STATIC;
 	params->rframe_config = FIRA_RFRAME_CONFIG_SP3;
 	params->preamble_duration = FIRA_PREAMBULE_DURATION_64;
 	params->sfd_id = FIRA_SFD_ID_2;
@@ -605,11 +605,6 @@ void fira_session_free(struct fira_local *local, struct fira_session *session)
 	}
 	fira_session_fsm_uninit(local, session);
 	fira_round_hopping_sequence_destroy(session);
-	fira_aead_destroy(&session->crypto.aead);
-	/*
-	 * The session structure contains the Crypto context. This needs to be
-	 * cleared.
-	 */
 	kfree(session->rx_ctx[0]);
 	kfree_sensitive(session);
 }

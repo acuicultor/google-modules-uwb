@@ -63,6 +63,7 @@ static int fira_session_fsm_idle_start(struct fira_local *local,
 	u32 now_dtu;
 	int r;
 	int i;
+	int slot_duration_us;
 
 	trace_region_fira_session_params(session, params);
 	for (i = 0; i < params->meas_seq.n_steps; i++) {
@@ -71,13 +72,9 @@ static int fira_session_fsm_idle_start(struct fira_local *local,
 		step = &params->meas_seq.steps[i];
 		trace_region_fira_session_meas_seq_params(session, step, i);
 	}
+	slot_duration_us = (session->params.slot_duration_dtu * 1000) /
+			   (local->llhw->dtu_freq_hz / 1000);
 
-	r = fira_crypto_derive_per_session(local, session);
-	if (r)
-		return r;
-	r = fira_crypto_derive_per_rotation(local, session, 0);
-	if (r)
-		return r;
 	r = mcps802154_get_current_timestamp_dtu(local->llhw, &now_dtu);
 	if (r)
 		return r;
@@ -86,9 +83,14 @@ static int fira_session_fsm_idle_start(struct fira_local *local,
 	session->event_portid = info->snd_portid;
 	session->block_start_valid = false;
 	session->block_index = 0;
-	session->sts_index = session->crypto.sts_index_init;
+	session->round_index = 0;
 	session->controlee.synchronised = false;
 	session->last_access_timestamp_dtu = now_dtu;
+
+	r = fira_sts_init(session, slot_duration_us,
+			  mcps802154_get_current_channel(local->llhw));
+	if (r)
+		return r;
 
 	/* Set radio parameters. */
 	switch (params->prf_mode) {
@@ -128,9 +130,40 @@ static int fira_session_fsm_idle_start(struct fira_local *local,
 	return 0;
 }
 
+/* not static: shared with init state */
+int fira_session_fsm_idle_check_parameters(const struct fira_session *session,
+					   struct nlattr **attrs)
+{
+	enum fira_session_param_attrs i;
+
+	for (i = FIRA_SESSION_PARAM_ATTR_UNSPEC + 1;
+	     i <= FIRA_SESSION_PARAM_ATTR_MAX; i++) {
+		const struct nlattr *attr = attrs[i];
+
+		if (!attr)
+			/* Attribute not provided. */
+			continue;
+
+		switch (i) {
+		case FIRA_SESSION_PARAM_ATTR_STS_CONFIG:
+			if (fira_crypto_get_capabilities() &
+			    (1 << nla_get_u8(attr)))
+				continue;
+			else
+				return -EINVAL;
+			break;
+		/* no check on other parameters */
+		default:
+			break;
+		}
+	}
+	return 0;
+}
+
 const struct fira_session_fsm_state fira_session_fsm_idle = {
 	.id = FIRA_SESSION_STATE_ID_IDLE,
 	.parameters_updated = fira_session_fsm_idle_parameters_updated,
 	.controlee_list_updated = fira_session_fsm_idle_controlee_list_updated,
 	.start = fira_session_fsm_idle_start,
+	.check_parameters = fira_session_fsm_idle_check_parameters,
 };

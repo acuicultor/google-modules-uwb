@@ -166,12 +166,16 @@ enum fira_call {
  *	Number of antenna pairs for RX.
  * @FIRA_CAPABILITY_ATTR_TX_ANTENNAS:
  *	Number of antennas for TX.
- * @FIRA_CAPABILITY_ATTR_STS_CONFIG_STATIC:
+ * @FIRA_CAPABILITY_ATTR_STS_STATIC:
  *	Static STS supported.
- * @FIRA_CAPABILITY_ATTR_STS_CONFIG_DYNAMIC:
+ * @FIRA_CAPABILITY_ATTR_STS_DYNAMIC:
  *	Dynamic STS supported.
- * @FIRA_CAPABILITY_ATTR_STS_CONFIG_DYNAMIC_INDIVIDUAL:
+ * @FIRA_CAPABILITY_ATTR_STS_DYNAMIC_INDIVIDUAL_KEY:
  *	Dynamic STS for controlee individual keys supported.
+ * @FIRA_CAPABILITY_ATTR_STS_PROVISIONED:
+ *	Provisioned STS supported.
+ * @FIRA_CAPABILITY_ATTR_STS_PROVISIONED_INDIVIDUAL_KEY:
+ *	Provisioned STS for controlee individual keys supported.
  * @FIRA_CAPABILITY_ATTR_AOA_AZIMUTH:
  *	AoA in azimuth supported.
  * @FIRA_CAPABILITY_ATTR_AOA_AZIMUTH_FULL:
@@ -235,9 +239,11 @@ enum fira_capability_attrs {
 	FIRA_CAPABILITY_ATTR_RX_ANTENNA_PAIRS,
 	FIRA_CAPABILITY_ATTR_TX_ANTENNAS,
 	/* STS and crypto capabilities. */
-	FIRA_CAPABILITY_ATTR_STS_CONFIG_STATIC,
-	FIRA_CAPABILITY_ATTR_STS_CONFIG_DYNAMIC,
-	FIRA_CAPABILITY_ATTR_STS_CONFIG_DYNAMIC_INDIVIDUAL,
+	FIRA_CAPABILITY_ATTR_STS_STATIC,
+	FIRA_CAPABILITY_ATTR_STS_DYNAMIC,
+	FIRA_CAPABILITY_ATTR_STS_DYNAMIC_INDIVIDUAL_KEY,
+	FIRA_CAPABILITY_ATTR_STS_PROVISIONED,
+	FIRA_CAPABILITY_ATTR_STS_PROVISIONED_INDIVIDUAL_KEY,
 	/* Report. */
 	FIRA_CAPABILITY_ATTR_AOA_AZIMUTH,
 	FIRA_CAPABILITY_ATTR_AOA_AZIMUTH_FULL,
@@ -359,16 +365,17 @@ enum fira_call_attrs {
  * @FIRA_SESSION_PARAM_ATTR_MEASUREMENT_SEQUENCE:
  * 	Sequence of measurement steps. Configures antenna flexibility.
  * @FIRA_SESSION_PARAM_ATTR_STS_CONFIG:
- *	Static STS (0, default), dynamic STS (1) or dynamic STS for controlee
- *	individual keys (2)
+ *	Static STS (0, default), Dynamic STS (1), Dynamic STS for controlee
+ *	individual keys (2), Provisioned STS (3), Provisioned STS for controlee
+ *	individual keys (4). See &enum fira_sts_mode.
  * @FIRA_SESSION_PARAM_ATTR_SUB_SESSION_ID:
  *	For dynamic STS for controlee individual key, sub session ID [controlee only]
  * @FIRA_SESSION_PARAM_ATTR_VUPPER64:
  *	vUpper64 for static STS (UCI: STATIC_STS_IV | VENDOR_ID)
  * @FIRA_SESSION_PARAM_ATTR_SESSION_KEY:
- *	For dynamic STS, session key (not in UCI)
+ *	For provisioned sts only, session key.
  * @FIRA_SESSION_PARAM_ATTR_SUB_SESSION_KEY:
- *	For dynamic STS for controlee individual keys, sub session key [controlee only]
+ *	For dynamic or provisioned STS, sub session key [controlee only]
  * @FIRA_SESSION_PARAM_ATTR_KEY_ROTATION:
  *	Disable (0, default) or enabled (1)
  * @FIRA_SESSION_PARAM_ATTR_KEY_ROTATION_RATE:

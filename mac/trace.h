@@ -503,6 +503,8 @@ TRACE_EVENT(llhw_set_sts_params,
 		__field(int, seg_len)
 		__field(int, sp2_tx_gap_4chips)
 		__array(int, sp2_rx_gap_4chips, MCPS802154_STS_N_SEGS_MAX)
+		__array(u8, key, AES_BLOCK_SIZE)
+		__array(u8, v, AES_BLOCK_SIZE)
 		),
 	TP_fast_assign(
 		LOCAL_ASSIGN;
@@ -511,13 +513,25 @@ TRACE_EVENT(llhw_set_sts_params,
 		__entry->sp2_tx_gap_4chips = params->sp2_tx_gap_4chips;
 		memcpy(__entry->sp2_rx_gap_4chips, params->sp2_rx_gap_4chips,
 		       sizeof(params->sp2_rx_gap_4chips));
+		memcpy(__entry->key, params->key, sizeof(params->key));
+		memcpy(__entry->v, params->v, sizeof(params->v));
 		),
 	TP_printk(LOCAL_PR_FMT " n_segs=%d seg_len=%d sp2_tx_gap_4chips=%d"
-		  " sp2_rx_gap_4chips=%d,%d,%d,%d",
+		  " sp2_rx_gap_4chips=%d,%d,%d,%d"
+		  " sts_key=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x"
+		  " sts_v=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
 		  LOCAL_PR_ARG, __entry->n_segs, __entry->seg_len,
 		  __entry->sp2_tx_gap_4chips, __entry->sp2_rx_gap_4chips[0],
 		  __entry->sp2_rx_gap_4chips[1], __entry->sp2_rx_gap_4chips[2],
-		  __entry->sp2_rx_gap_4chips[3])
+		  __entry->sp2_rx_gap_4chips[3], __entry->key[0], __entry->key[1],
+		  __entry->key[2], __entry->key[3], __entry->key[4], __entry->key[5],
+		  __entry->key[6], __entry->key[7], __entry->key[8], __entry->key[9],
+		  __entry->key[10], __entry->key[11], __entry->key[12], __entry->key[13],
+		  __entry->key[14], __entry->key[15], __entry->v[0], __entry->v[1],
+		  __entry->v[2], __entry->v[3], __entry->v[4], __entry->v[5],
+		  __entry->v[6], __entry->v[7], __entry->v[8], __entry->v[9],
+		  __entry->v[10], __entry->v[11], __entry->v[12], __entry->v[13],
+		  __entry->v[14], __entry->v[15])
 	);
 
 TRACE_EVENT(llhw_rx_get_measurement,

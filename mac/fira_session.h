@@ -26,6 +26,7 @@
 
 #include "fira_session_fsm.h"
 #include "fira_region.h"
+#include "fira_sts.h"
 #include "fira_crypto.h"
 #include "fira_round_hopping_crypto_impl.h"
 
@@ -66,7 +67,7 @@ struct fira_controlee {
 	 * @sub_session_key_len: Length of the sub-session key used by
 	 * the controlee.
 	 */
-	__u16 sub_session_key_len;
+	__u8 sub_session_key_len;
 	/**
 	 * @sub_session_key: Sub-session key used by the controlee.
 	 */
@@ -131,8 +132,12 @@ struct fira_session_params {
 	enum fira_prf_mode prf_mode;
 	enum fira_phr_data_rate phr_data_rate;
 	/* STS and crypto. */
-	enum fira_sts_config sts_config;
+	enum fira_sts_mode sts_config;
 	u8 vupper64[FIRA_VUPPER64_SIZE];
+	u8 session_key_len;
+	u8 session_key[FIRA_KEY_SIZE_MAX];
+	bool key_rotation;
+	u8 key_rotation_rate;
 	bool aoa_result_req;
 	bool report_tof;
 	bool report_aoa_azimuth;
@@ -231,10 +236,6 @@ struct fira_session {
 	 */
 	int next_round_index;
 	/**
-	 * @sts_index: STS index value on the last access.
-	 */
-	u32 sts_index;
-	/**
 	* @stop_request: Session has been requested to stop.
 	*/
 	bool stop_request;
@@ -253,10 +254,7 @@ struct fira_session {
 	 * Counter reset on ranging round success.
 	 */
 	int n_ranging_round_retry;
-	/**
-	 * @crypto: Crypto context.
-	 */
-	struct fira_crypto crypto;
+
 	/**
 	 * @round_hopping_sequence: Round hopping sequence generation context.
 	 */
@@ -351,6 +349,25 @@ struct fira_session {
 	 * @rx_ctx: Custom rx context for all controlees.
 	 */
 	void *rx_ctx[FIRA_CONTROLEES_MAX];
+	/**
+	 * @crypto: crypto related variables.
+	 */
+	struct fira_crypto *crypto;
+	/**
+	 * @sts: sts related variables.
+	 */
+	struct {
+		/**
+		 * @phy_sts_index_init: Initial phy_sts_index deduced at context init.
+		 */
+		u32 phy_sts_index_init;
+
+		/**
+		 * @last_rotation_block_index: index to the last block where the
+		 * rotation occurred.
+		 */
+		u32 last_rotation_block_index;
+	} sts;
 };
 
 /**
@@ -514,21 +531,6 @@ void fira_session_update_controlees(struct fira_local *local,
  */
 bool fira_session_is_ready(const struct fira_local *local,
 			   const struct fira_session *session);
-
-/**
- * fira_session_get_round_sts_index() - Get current round's STS index.
- * @session: Session.
- *
- * Return: The STS of the first slot of the current round.
- */
-static inline u32
-fira_session_get_round_sts_index(const struct fira_session *session)
-{
-	const struct fira_session_params *p = &session->params;
-
-	return session->sts_index +
-	       session->round_index * p->round_duration_slots;
-}
 
 /**
  * fira_session_get_meas_seq_step() - Get current measurement step.

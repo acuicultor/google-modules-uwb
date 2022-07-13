@@ -32,10 +32,11 @@
 #include "fira_region_call.h"
 #include "fira_access.h"
 #include "fira_session.h"
-
+#include "fira_crypto.h"
 #include "warn_return.h"
 
 static struct mcps802154_region_ops fira_region_ops;
+static bool do_crypto_selftest_on_module_init;
 
 static void fira_report_event(struct work_struct *work)
 {
@@ -68,6 +69,7 @@ static struct mcps802154_region *fira_open(struct mcps802154_llhw *llhw)
 	INIT_WORK(&local->report_work, fira_report_event);
 	/* FIXME: Hack to simplify unit test, which is borderline. */
 	local->block_duration_rx_margin_ppm = UWB_BLOCK_DURATION_MARGIN_PPM;
+	fira_crypto_init(NULL);
 	return &local->region;
 }
 
@@ -459,10 +461,8 @@ void fira_check_all_missed_ranging(struct fira_local *local,
 
 int __init fira_region_init(void)
 {
-	int r;
-
-	r = fira_crypto_test();
-	WARN_RETURN(r);
+	if (do_crypto_selftest_on_module_init)
+		WARN_RETURN(fira_crypto_test());
 
 	return mcps802154_region_register(&fira_region_ops);
 }
@@ -472,6 +472,7 @@ void __exit fira_region_exit(void)
 	mcps802154_region_unregister(&fira_region_ops);
 }
 
+module_param_named(crypto_selftest, do_crypto_selftest_on_module_init, bool, 0644);
 module_init(fira_region_init);
 module_exit(fira_region_exit);
 

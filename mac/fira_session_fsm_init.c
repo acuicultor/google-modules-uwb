@@ -65,9 +65,13 @@ fira_session_fsm_init_controlee_list_updated(struct fira_local *local,
 	}
 }
 
+int fira_session_fsm_idle_check_parameters(const struct fira_session *session,
+					   struct nlattr **attrs);
+
 const struct fira_session_fsm_state fira_session_fsm_init = {
 	.id = FIRA_SESSION_STATE_ID_INIT,
 	.enter = fira_session_fsm_init_enter,
 	.parameters_updated = fira_session_fsm_init_parameters_updated,
 	.controlee_list_updated = fira_session_fsm_init_controlee_list_updated,
+	.check_parameters = fira_session_fsm_idle_check_parameters,
 };

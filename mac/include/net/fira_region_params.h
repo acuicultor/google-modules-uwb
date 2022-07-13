@@ -27,6 +27,7 @@
 #include <linux/types.h>
 
 #define FIRA_VUPPER64_SIZE 8
+#define FIRA_STS_VUPPER64_OFFSET 8
 #define FIRA_KEY_SIZE_MAX 32
 #define FIRA_KEY_SIZE_MIN 16
 #define FIRA_CONTROLEES_MAX 8
@@ -250,17 +251,28 @@ enum fira_rssi_report_type {
 };
 
 /**
- * enum fira_sts_config - Scrambled Timestamp Sequence configuration.
- * @FIRA_STS_CONFIG_STATIC: Use a static STS configuration.
- * @FIRA_STS_CONFIG_DYNAMIC: Use a dynamic STS configuration.
- * @FIRA_STS_CONFIG_DYNAMIC_INDIVIDUAL_KEY: Use a dynamic STS configuration
- * with an individual key.
+ * enum fira_sts_mode - Scrambled Timestamp Sequence modes.
+ *
+ * @FIRA_STS_MODE_STATIC: Static STS mode.
+ * @FIRA_STS_MODE_DYNAMIC: Use a dynamic STS mode.
+ * @FIRA_STS_MODE_DYNAMIC_INDIVIDUAL_KEY: Use a dynamic STS mode
+ * with individual controlee key.
+ * @FIRA_STS_MODE_PROVISIONED: Use a provisioned STS mode.
+ * @FIRA_STS_MODE_PROVISIONED_INDIVIDUAL_KEY: Use a provisioned STS
+ * mode with individual controlee key.
  */
-enum fira_sts_config {
-	FIRA_STS_CONFIG_STATIC,
-	FIRA_STS_CONFIG_DYNAMIC,
-	FIRA_STS_CONFIG_DYNAMIC_INDIVIDUAL_KEY,
+enum fira_sts_mode {
+	FIRA_STS_MODE_STATIC = 0,
+	FIRA_STS_MODE_DYNAMIC = 1,
+	FIRA_STS_MODE_DYNAMIC_INDIVIDUAL_KEY = 2,
+	FIRA_STS_MODE_PROVISIONED = 3,
+	FIRA_STS_MODE_PROVISIONED_INDIVIDUAL_KEY = 4,
 };
+
+/*
+ * Get the capabilities bitfield value corresponding to given STS mode.
+ */
+#define STS_CAP(mode) (1 << (FIRA_STS_MODE_##mode))
 
 /**
  * enum fira_ranging_status - The ranging status.
@@ -340,7 +352,7 @@ enum fira_ranging_diagnostics_frame_report_flags {
 	FIRA_RANGING_DIAGNOSTICS_FRAME_REPORT_RSSIS = 1 << 0,
 	FIRA_RANGING_DIAGNOSTICS_FRAME_REPORT_AOAS = 1 << 1,
 	FIRA_RANGING_DIAGNOSTICS_FRAME_REPORT_CIRS = 1 << 2,
-	__FIRA_RANGING_DIAGNOSTICS_FRAME_REPORT_AFTER_LAST = 1U << 31,
+	__FIRA_RANGING_DIAGNOSTICS_FRAME_REPORT_AFTER_LAST = 1 << 31,
 };
 
 /**
