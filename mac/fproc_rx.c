@@ -22,6 +22,7 @@
  */
 #include <linux/errno.h>
 
+#include "mcps802154_fproc.h"
 #include "mcps802154_i.h"
 #include "llhw-ops.h"
 
@@ -65,13 +66,16 @@ static void mcps802154_fproc_rx_rx_frame(struct mcps802154_local *local)
 			return;
 		}
 	}
-	mcps802154_fproc_access_done(local, !!access->error);
-
-	if (access->error && access->error != -EBUSY)
-		mcps802154_fproc_broken_handle(local);
-	else
-		/* Next access. */
-		mcps802154_fproc_access_now(local);
+	if (access->error) {
+		if (mcps802154_fproc_is_non_recoverable_error(access)) {
+			mcps802154_fproc_access_done(local, true);
+			mcps802154_fproc_broken_handle(local);
+			return;
+		}
+	}
+	/* Next access. */
+	mcps802154_fproc_access_done(local, false);
+	mcps802154_fproc_access_now(local);
 }
 
 static void mcps802154_fproc_rx_rx_error(struct mcps802154_local *local,
@@ -91,11 +95,15 @@ static void mcps802154_fproc_rx_schedule_change(struct mcps802154_local *local)
 		/* Wait for RX result. */
 		return;
 
-	mcps802154_fproc_access_done(local, !!access->error);
-	if (access->error)
-		mcps802154_fproc_broken_handle(local);
-	else
+	if (access->error) {
+		if (mcps802154_fproc_is_non_recoverable_error(access)) {
+			mcps802154_fproc_access_done(local, true);
+			mcps802154_fproc_broken_handle(local);
+			return;
+		}
+	}
 		/* Next access. */
+		mcps802154_fproc_access_done(local, false);
 		mcps802154_fproc_access_now(local);
 }
 

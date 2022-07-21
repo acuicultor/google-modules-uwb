@@ -24,6 +24,7 @@
 #include <linux/ieee802154.h>
 #include <linux/netdevice.h>
 
+#include "mcps802154_fproc.h"
 #include "mcps802154_i.h"
 #include "llhw-ops.h"
 
@@ -55,36 +56,38 @@ static const struct mcps802154_fproc_state mcps802154_fproc_tx = {
 static void mcps802154_fproc_tx_wack_rx_frame(struct mcps802154_local *local)
 {
 	struct mcps802154_access *access = local->fproc.access;
-	int r;
 
 	/* Read frame. */
 	struct sk_buff *skb = NULL;
 	struct mcps802154_rx_frame_info info = {
 		.flags = MCPS802154_RX_FRAME_INFO_LQI,
 	};
-	r = llhw_rx_get_frame(local, &skb, &info);
-	if (!r) {
+	access->error = llhw_rx_get_frame(local, &skb, &info);
+	if (!access->error) {
 		/* Is it an ack frame? With same seq number? */
 		if (IEEE802154_FC_TYPE(skb->data[0]) ==
-			    IEEE802154_FC_TYPE_ACK &&
-		    skb->data[IEEE802154_FC_LEN] ==
-			    local->fproc.tx_skb->data[IEEE802154_FC_LEN]) {
+				IEEE802154_FC_TYPE_ACK &&
+				skb->data[IEEE802154_FC_LEN] ==
+				local->fproc.tx_skb->data[IEEE802154_FC_LEN]) {
 			/* Ack frame. */
 			access->ops->tx_return(
-				access, 0, local->fproc.tx_skb,
-				MCPS802154_ACCESS_TX_RETURN_REASON_CONSUMED);
+					access, 0, local->fproc.tx_skb,
+					MCPS802154_ACCESS_TX_RETURN_REASON_CONSUMED);
 		} else {
 			/* Not an ack or read failure or a bad sequence number. */
 			access->ops->tx_return(
-				access, 0, local->fproc.tx_skb,
-				MCPS802154_ACCESS_TX_RETURN_REASON_FAILURE);
+					access, 0, local->fproc.tx_skb,
+					MCPS802154_ACCESS_TX_RETURN_REASON_FAILURE);
 		}
 		dev_kfree_skb_any(skb);
 		local->fproc.tx_skb = NULL;
 		mcps802154_fproc_access_done(local, false);
 		mcps802154_fproc_access_now(local);
-	} else {
+	} else if (access->error && mcps802154_fproc_is_non_recoverable_error(access)) {
 		mcps802154_fproc_broken_handle(local);
+	} else {
+		mcps802154_fproc_access_done(local, false);
+		mcps802154_fproc_access_now(local);
 	}
 }
 

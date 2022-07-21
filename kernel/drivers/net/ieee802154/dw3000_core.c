@@ -2316,7 +2316,7 @@ int dw3000_check_operational_state(struct dw3000 *dw, int delay_dtu,
 		dw->deep_sleep_state.next_operational_state);
 
 	if (dw->current_operational_state == DW3000_OP_STATE_OFF)
-		return -EIO;
+		return -ENODEV;
 	/* In deep sleep or wake up in progress, we can store parameters only
 	   if no other operation queued. */
 	if ((dw->current_operational_state < DW3000_OP_STATE_IDLE_PLL) &&
@@ -2581,8 +2581,11 @@ int dw3000_do_rx_enable(struct dw3000 *dw,
 	/* For delayed RX, where delay_dtu != 0, enter/leave deep sleep */
 	rc = dw3000_check_operational_state(dw, delay_dtu, can_sync);
 	if (rc) {
-		/* Handle error cases first */
-		if (rc < 0)
+		/*
+		 * Handle error cases first :
+		 *  - Do not fail if we are in deep sleep/wakeup state
+		 */
+		if (rc < 0 && rc != -EIO)
 			return rc;
 		/* Save parameters to activate RX delayed when
 		   wakeup later */
