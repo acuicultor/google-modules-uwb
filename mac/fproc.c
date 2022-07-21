@@ -25,6 +25,25 @@
 #include "mcps802154_i.h"
 #include "llhw-ops.h"
 
+bool mcps802154_fproc_is_non_recoverable_error(struct mcps802154_access *access)
+{
+	bool rc = false;
+	if (access->error < 0) {
+		switch (access->error) {
+			case -ETIME:
+			case -EIO:
+			case -EAGAIN:
+				rc = false;
+				break;
+			default:
+				pr_err("mcps: error %d is not recoverable", access->error);
+				rc = true;
+				break;
+		}
+	}
+	return rc;
+}
+
 void mcps802154_fproc_init(struct mcps802154_local *local)
 {
 	local->fproc.state = &mcps802154_fproc_stopped;
@@ -94,11 +113,13 @@ void mcps802154_fproc_access(struct mcps802154_local *local,
 	}
 
 	if (access->error) {
-		mcps802154_fproc_access_done(local, true);
-		if (access->error == -ETIME)
-			mcps802154_fproc_access_now(local);
-		else
+		if (mcps802154_fproc_is_non_recoverable_error(access)) {
+			mcps802154_fproc_access_done(local, true);
 			mcps802154_fproc_broken_handle(local);
+		} else {
+			mcps802154_fproc_access_done(local, false);
+			mcps802154_fproc_access_now(local);
+		}
 	}
 }
 
