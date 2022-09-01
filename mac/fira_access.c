@@ -576,7 +576,11 @@ static void fira_rx_frame_control(struct fira_local *local,
 	left_duration_dtu =
 		access->duration_dtu - offset_in_access_duration_dtu;
 
-	if (left_duration_dtu < n_slots * params->slot_duration_dtu ||
+	/*
+	 * The RCM has been received, remaining slots are: n_slots - 1.
+	 * Stop if no time left to finish the ranging or if asked to.
+	 */
+	if (left_duration_dtu < (n_slots - 1) * params->slot_duration_dtu ||
 	    session->stop_inband) {
 		n_slots = 1;
 	} else {
