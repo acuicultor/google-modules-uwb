@@ -619,7 +619,7 @@ fira_session_fsm_active_get_demand(const struct fira_local *local,
 				 * the past of next_timestamp_dtu.
 				 */
 				margin_less =
-					next_timestamp_dtu - timestamp_dtu;
+					timestamp_dtu - next_timestamp_dtu;
 			timestamp_dtu -= margin_less;
 			rx_timeout_dtu = margin_less + margin_more;
 			duration_dtu = round_duration_dtu + margin_less;
