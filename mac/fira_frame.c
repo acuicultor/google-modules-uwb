@@ -834,7 +834,8 @@ bool fira_frame_rframe_payload_check(struct fira_local *local,
 		skb_pull(skb, ie_get->len);
 
 		if (ie_get->id == IEEE802154_IE_PAYLOAD_VENDOR_GID &&
-		    ie_get->len >= FIRA_IE_VENDOR_OUI_LEN) {
+		    ie_get->len >= FIRA_IE_VENDOR_OUI_LEN &&
+		    ie_get->len <= FIRA_IE_VENDOR_OUI_LEN + FIRA_DATA_PAYLOAD_SIZE_MAX) {
 			u32 vendor;
 			unsigned int data_len;
 
