@@ -187,8 +187,8 @@ const struct dw3000_chip_version dw3000_chip_versions[] = {
 #define DW3000_TXRXSWITCH_TX 0x01011100
 #define DW3000_TXRXSWITCH_AUTO 0x1C000000
 
-#define DW3000_RF_TXCTRL_CH5 0x1C071134UL
-#define DW3000_RF_TXCTRL_CH9 0x1C010034UL
+#define DW3000_RF_TXCTRL_CH5 0x1C081134UL
+#define DW3000_RF_TXCTRL_CH9 0x1C020034UL
 #define DW3000_RF_TXCTRL_LO_B2 0x0E
 #define DW3000_RF_PLL_CFG_CH5 0x1F3C
 #define DW3000_RF_PLL_CFG_CH9 0x0F3C
@@ -299,6 +299,9 @@ enum ciadiag_dbl_options {
 
 /* LDO VOUT value */
 #define DW3000_RF_LDO_VOUT 0x0D7FFFFFUL
+
+/* PLL common value  */
+#define DW3000_RF_PLL_COMMON 0xE104
 
 struct dw3000_ciadiag_reg_info {
 	u32 diag1;
@@ -4275,6 +4278,11 @@ static inline int dw3000_configure_rf(struct dw3000 *dw)
 	rc = dw3000_reg_write16(dw, DW3000_PLL_CFG_ID, 0, rf_pll_cfg);
 	if (rc)
 		return rc;
+
+	rc = dw3000_reg_write16(dw, DW3000_PLL_COMMON_ID, 0, DW3000_RF_PLL_COMMON);
+	if (rc)
+		return rc;
+
 	rc = dw3000_reg_write8(dw, DW3000_LDO_RLOAD_ID, 1,
 			       DW3000_LDO_RLOAD_VAL_B1);
 	if (rc)
