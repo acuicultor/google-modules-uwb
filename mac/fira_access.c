@@ -713,9 +713,13 @@ static void fira_rx_frame(struct mcps802154_access *access, int frame_idx,
 				   error);
 
 	if (info && info->flags & MCPS802154_RX_FRAME_INFO_RSSI) {
+		if ((ri->n_rx_rssis + 1) > FIRA_MESSAGE_ID_MAX)
+			return;
+
 		ri->rx_rssis[ri->n_rx_rssis++] =
 			info->rssi < FIRA_RSSI_MAX ? info->rssi : FIRA_RSSI_MAX;
 	}
+
 	if (fira_do_process_rx_frame(error, ri, slot->index)) {
 		switch (slot->message_id) {
 		case FIRA_MESSAGE_ID_RANGING_INITIATION:
