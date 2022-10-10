@@ -1823,6 +1823,7 @@ static int dw3000_power_supply(struct dw3000 *dw, int onoff)
 static int dw3000_reset_assert(struct dw3000 *dw, bool reset)
 {
 	int rc;
+	int value;
 
 	if (!gpio_is_valid(dw->reset_gpio)) {
 		dev_err(dw->dev, "invalid reset gpio\n");
@@ -1838,10 +1839,22 @@ static int dw3000_reset_assert(struct dw3000 *dw, bool reset)
 	} else {
 		/* Release RESET GPIO.
 		 * Reset should be open drain, or switched to input whenever not driven
-		 * low. It should not be driven high. */
+		 * low. It should not be driven high during chip cold boot process.  */
 		rc = gpio_direction_input(dw->reset_gpio);
-		if (rc)
+		if (rc) {
 			dev_err(dw->dev, "Could not set reset gpio as input\n");
+			return rc;
+		}
+		/* check if dw3000 finishes cold boot */
+		value = gpio_get_value(dw->reset_gpio);
+		if (!value) {
+			return -EPROBE_DEFER;
+		}
+
+		/* set pin to output and drive high */
+		rc = gpio_direction_output(dw->reset_gpio, 1);
+		if (rc)
+			dev_err(dw->dev, "Could not set reset gpio as output\n");
 	}
 	return rc;
 }
