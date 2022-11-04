@@ -4403,6 +4403,8 @@ int dw3000_configure_chan(struct dw3000 *dw)
 	rc = dw3000_configure_rf(dw);
 	if (rc)
 		return rc;
+	/* Disable AGC */
+	dw3000_reg_modify32(dw, DW3000_AGC_CFG_ID, 0, DW3000_AGC_DIS_MASK, 0);
 	/* Configure DGC. */
 	return dw3000_configure_dgc(dw);
 }
