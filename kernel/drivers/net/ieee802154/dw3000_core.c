@@ -297,6 +297,9 @@ enum ciadiag_dbl_options {
 /* Disable CIA diagnostic. CIACONFIG's bit-4 in RX_ANTENNA_DELAY + 1 */
 #define DW3000_CIA_CONFIG_DIAG_OFF (0x1 << 4)
 
+/* LDO VOUT value */
+#define DW3000_RF_LDO_VOUT 0x0D7FFFFFUL
+
 struct dw3000_ciadiag_reg_info {
 	u32 diag1;
 	u32 diag12;
@@ -5228,6 +5231,8 @@ static int dw3000_configure(struct dw3000 *dw)
 
 	/* Update configuration dependent timings */
 	dw3000_update_timings(dw);
+	/* update VOUT */
+	rc = dw3000_reg_write32(dw, DW3000_LDO_VOUT_ID, 0, DW3000_RF_LDO_VOUT);
 	return rc;
 }
 
@@ -7468,6 +7473,9 @@ static inline int dw3000_isr_handle_spi_ready(struct dw3000 *dw,
 
 	/* TODO: So, just add below this line more required unsaved registers
 	 * setup. */
+	 rc = dw3000_reg_write32(dw, DW3000_LDO_VOUT_ID, 0, DW3000_RF_LDO_VOUT);
+	 if (rc)
+		 return rc;
 
 setuperror:
 #ifdef CONFIG_DW3000_DEBUG
