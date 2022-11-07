@@ -1799,6 +1799,12 @@ static int dw3000_power_supply(struct dw3000 *dw, int onoff)
 			onoff ? "enable" : "disable", rc);
 		return rc;
 	}
+	/* Set 2p5 reg to 2.7V  */
+	rc = regulator_set_voltage(power->regulator_2p5, 2700000, 2700000);
+	if (rc < 0) {
+		dev_err(dw->dev, "regulator failed to set voltage :%d\n", rc);
+		return rc;
+	}
 
 	rc = dw3000_power_supply_one(power->regulator_vdd, onoff);
 	if (rc < 0) {
