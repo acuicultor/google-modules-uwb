@@ -199,7 +199,7 @@ enum spi_modes {
 /* Size of RX LUT configuration tables */
 #define DW3000_CONFIGMRXLUT_MAX 7
 #define DW3000_DGC_CFG 0x38
-#define DW3000_DGC_CFG0 0x10000240
+#define DW3000_DGC_CFG0 0x00000240
 #define DW3000_DGC_CFG1 0x1a491248
 #define DW3000_DGC_CFG2 0x2db248db
 
@@ -419,7 +419,7 @@ int dw3000_tx_setcwtone(struct dw3000 *dw, bool on);
 int dw3000_config_antenna_gpios(struct dw3000 *dw);
 int dw3000_set_tx_antenna(struct dw3000 *dw, int ant_set_id);
 int dw3000_set_rx_antennas(struct dw3000 *dw, int ant_set_id,
-			   bool pdoa_enabled);
+			   bool pdoa_enabled, int frame_idx);
 
 s16 dw3000_read_pdoa(struct dw3000 *dw);
 s16 dw3000_pdoa_to_aoa_lut(struct dw3000 *dw, s16 pdoa_rad_q11);
