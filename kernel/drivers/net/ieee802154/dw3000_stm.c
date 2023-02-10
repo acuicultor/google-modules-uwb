@@ -21,21 +21,50 @@
  * Qorvo. Please contact Qorvo to inquire about licensing terms.
  */
 #include <linux/version.h>
+#include <linux/module.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
 #include <linux/mutex.h>
+#include <linux/of.h>
 
 #include "dw3000.h"
 #include "dw3000_core.h"
 
-#define DW3000_MIN_CLAMP_VALUE	170
+#define DW3000_MIN_CLAMP_VALUE 460
 
 /* First version with sched_setattr_nocheck: v4.16-rc1~164^2~5 */
 #if (KERNEL_VERSION(4, 11, 0) <= LINUX_VERSION_CODE)
 #include <uapi/linux/sched/types.h>
 #endif
 
-static inline int dw3000_set_sched_attr(struct task_struct *p)
+static int dw3000_min_clamp_value = 0;
+
+module_param_named(min_clamp_value, dw3000_min_clamp_value, int, 0644);
+MODULE_PARM_DESC(min_clamp_value, "Sets the minimum cpu frequency the dw3000 thread must run at");
+
+
+static void dw3000_get_clamp_from_dt(struct dw3000 *dw) {
+	int dt_clamp = DW3000_MIN_CLAMP_VALUE;
+	int ret;
+
+	if (!dw->dev->of_node)
+		return;
+	/* debug value is priority  */
+	if (dw3000_min_clamp_value) {
+		dw->min_clamp_value = dw3000_min_clamp_value;
+		dev_info(dw->dev, "using debug min clamp=%d\n", dw->min_clamp_value);
+		return;
+	}
+
+	ret = of_property_read_u32(dw->dev->of_node, "min_clamp", &dt_clamp);
+	if (ret) {
+		dev_err(dw->dev, "error reading dt_clamp ret=%d\n", ret);
+	}
+	dw->min_clamp_value = dt_clamp;
+	dev_info(dw->dev, "dt_clamp=%d\n", dw->min_clamp_value);
+}
+
+static inline int dw3000_set_sched_attr(struct dw3000 *dw, struct task_struct *p)
 {
 #if (KERNEL_VERSION(5, 9, 0) > LINUX_VERSION_CODE)
 	struct sched_param sched_par = { .sched_priority = MAX_RT_PRIO - 2 };
@@ -45,7 +74,7 @@ static inline int dw3000_set_sched_attr(struct task_struct *p)
 	struct sched_attr attr = { .sched_policy = SCHED_FIFO,
 				   .sched_priority = MAX_RT_PRIO - 2,
 				   .sched_flags = SCHED_FLAG_UTIL_CLAMP_MIN,
-				   .sched_util_min = DW3000_MIN_CLAMP_VALUE };
+				   .sched_util_min = dw->min_clamp_value };
 	return sched_setattr_nocheck(p, &attr);
 #endif
 }
@@ -75,7 +104,7 @@ int dw3000_enqueue_generic(struct dw3000 *dw, struct dw3000_stm_command *cmd)
 		return cmd->cmd(dw, cmd->in, cmd->out);
 	}
 
-	/* Mutex is used in dw3000_enqueue_generic() 
+	/* Mutex is used in dw3000_enqueue_generic()
 	* This protection will work with the spinlock in order to allow
 	* the CPU to sleep and avoid ressources wasting during spinning
 	*/
@@ -302,14 +331,18 @@ int dw3000_state_init(struct dw3000 *dw, int cpu)
 	stm->mthread = kthread_create(dw3000_event_thread, dw, "dw3000-%s",
 				      dev_name(dw->dev));
 	if (IS_ERR(stm->mthread)) {
-		return PTR_ERR(stm->mthread);
+		int err = PTR_ERR(stm->mthread);
+		stm->mthread = NULL;
+		return err;
 	}
+	get_task_struct(stm->mthread);
 	if (cpu >= 0)
 		kthread_bind(stm->mthread, (unsigned)cpu);
 	dw->dw3000_pid = stm->mthread->pid;
 
 	/* Increase thread priority */
-	rc = dw3000_set_sched_attr(stm->mthread);
+	dw3000_get_clamp_from_dt(dw);
+	rc = dw3000_set_sched_attr(dw, stm->mthread);
 	if (rc)
 		dev_err(dw->dev, "dw3000_set_sched_attr failed: %d\n", rc);
 	return 0;
@@ -360,8 +393,13 @@ int dw3000_state_stop(struct dw3000 *dw)
 {
 	struct dw3000_state *stm = &dw->stm;
 
+	if (stm->mthread == NULL)
+		return 0; /* already stopped or not created yet */
+
 	/* Stop state machine thread */
 	kthread_stop(stm->mthread);
+	put_task_struct(stm->mthread);
+	stm->mthread = NULL;
 
 	dev_dbg(dw->dev, "state machine stopped\n");
 	return 0;
