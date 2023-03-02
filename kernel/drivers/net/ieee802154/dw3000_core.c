@@ -6485,7 +6485,7 @@ int dw3000_set_tx_antenna(struct dw3000 *dw, int ant_set_id)
 
 	if (rc)
 		return rc;
-	config->ant[0] = ant_idx1;
+	config->ant[ant_calib->port] = ant_idx1;
 	/* Switching antenna require changing some calibration parameters */
 	return dw3000_calib_update_config(dw);
 }
