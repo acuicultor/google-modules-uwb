@@ -64,7 +64,7 @@ static int nfcc_coex_session_set_parameters(struct nfcc_coex_local *local,
 	struct nfcc_coex_session *session = &local->session;
 	struct nfcc_coex_session_params *p = &session->params;
 	/* Maximum dtu duration is INT32_MAX. */
-	const u64 max_time0_ns =
+	const s64 max_time0_ns =
 		(S32_MAX * NS_PER_SECOND) / local->llhw->dtu_freq_hz;
 	int r;
 
@@ -98,7 +98,7 @@ static int nfcc_coex_session_set_parameters(struct nfcc_coex_local *local,
 				      local->llhw->dtu_freq_hz + now_ns;
 	}
 
-	if (p->time0_ns - now_ns > max_time0_ns)
+	if ((s64)(p->time0_ns - now_ns) > max_time0_ns)
 		return -ERANGE;
 	return 0;
 }
@@ -129,9 +129,13 @@ static int nfcc_coex_session_start(struct nfcc_coex_local *local,
 		return r;
 
 	diff_ns = p->time0_ns - now_ns;
-	diff_dtu = (diff_ns * local->llhw->dtu_freq_hz) / NS_PER_SECOND;
-	if (diff_dtu < local->llhw->anticip_dtu)
-		return -ETIMEDOUT;
+	diff_dtu = div64_s64(diff_ns * local->llhw->dtu_freq_hz, NS_PER_SECOND);
+	/* If the requested start date is in the past, start immediately */
+	if (diff_dtu < local->llhw->anticip_dtu) {
+		pr_warn("dw3000: Computed start date is in the past, scheduling"
+			" to anticip_dtu instead");
+		diff_dtu = local->llhw->anticip_dtu;
+	}
 
 	session->region_demand.timestamp_dtu = now_dtu + diff_dtu;
 	session->region_demand.max_duration_dtu = 0;
