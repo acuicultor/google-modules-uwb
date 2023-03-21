@@ -6471,13 +6471,14 @@ int dw3000_set_tx_antenna(struct dw3000 *dw, int ant_set_id)
 			 ant_set_id);
 		return -EINVAL;
 	}
-	/* Early return if no change */
-	if (ant_idx1 == config->ant[0])
-		return 0;
 	/* Retrieve antenna GPIO configuration from calibration data */
 	ant_calib = &dw->calib_data.ant[ant_idx1];
+	/* Early return if no change */
+	if (ant_idx1 == config->ant[ant_calib->port])
+		return 0;
+
 	/* switching to RF2 port for TX if necessary  */
-	if (ant_calib->port == 1 || dw->tx_rf2)
+	if ((ant_calib->port == 1) || (dw->tx_rf2))
 		dw3000_change_tx_rf_port(dw, ant_calib->port == 1);
 
 	/* Set GPIO state according config to select this antenna */
