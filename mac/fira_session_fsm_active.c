@@ -254,7 +254,7 @@ static void forward_to_next_ranging(struct fira_session *session, int n_ranging)
 }
 
 /**
- * ranging_round_done() - Update controlee and notify the upper layer.
+ * ranging_round_done() - Update controlee and notify the upper layer and rotate crypto keys.
  * @local: FiRa context.
  * @session: Session context.
  * @report_info: Report information to forward fira_session_report.

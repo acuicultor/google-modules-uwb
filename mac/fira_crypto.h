@@ -51,16 +51,20 @@ int fira_crypto_init(void *key_manager);
  */
 struct fira_crypto_params {
 	/**
-	 * @session_id: Id of the session using the fira_crypto.
-	 * This can also be a subsession key when this STS mode is active.
+	 * @session_id: Id of the session using the current fira_crypto.
 	 */
 	u32 session_id;
+	/**
+	 * @sub_session_id: Id of the sub-session using the current fira_crypto.
+	 * It is only used in case of Responder Specific Sub-session Key STS mode 0x04.
+	 */
+	u32 sub_session_id;
 	/**
 	 * @sts_config: The type of STS requested for this crypto.
 	 */
 	enum fira_sts_mode sts_config;
 	/**
-	 * @concat_params: The concatenated parameters of the session according
+	 * @concat_params: The concatenated parameters of the session/sub-session according
 	 * to the FiRa specs.
 	 */
 	const u8 *concat_params;
@@ -73,13 +77,13 @@ struct fira_crypto_params {
 	 */
 	const u8 *vupper64;
 	/**
-	 * @prov_session_key: The session key when provisioned STS is used.
+	 * @key: The key when provisioned STS is used.
 	 */
-	const u8 *prov_session_key;
+	const u8 *key;
 	/**
-	 * @prov_session_key_len: The length of the session key when provisioned STS is used.
+	 * @key_len: The length of the key when provisioned STS is used.
 	 */
-	u8 prov_session_key_len;
+	u8 key_len;
 };
 
 /**
@@ -92,7 +96,7 @@ u32 fira_crypto_get_capabilities(void);
 
 /**
  * fira_crypto_context_init() - Initialize a crypto context containing the crypto
- * elements for a session.
+ * elements for a session or sub-session.
  * @crypto_params: Parameters to initialize the crypto context.
  * @crypto: The initialized crypto context.
  *
@@ -127,12 +131,18 @@ int fira_crypto_rotate_elements(struct fira_crypto *crypto,
  * related to the given crypto context.
  *
  * @crypto: The context to use to compute the phy STS index init value.
- * @phy_sts_index_init: The pointer where the computed value will be stored.
  *
  * Return: 0 or error.
  */
-int fira_crypto_build_phy_sts_index_init(struct fira_crypto *crypto,
-					 u32 *phy_sts_index_init);
+int fira_crypto_build_phy_sts_index_init(struct fira_crypto *crypto);
+
+/**
+ * fira_crypto_get_phy_sts_index_init() - Get phy_sts_index_init related to the current crypto context.
+ * @crypto: Context storing the crypto-related parameters.
+ *
+ * Return: phy_sts_index_init deduced at crypto context initialization.
+ */
+u32 fira_crypto_get_phy_sts_index_init(const struct fira_crypto *crypto);
 
 /**
  * fira_crypto_get_sts_params() - Build and get the STS parameters according to
@@ -190,24 +200,21 @@ int fira_crypto_encrypt_frame(struct fira_crypto *crypto, struct sk_buff *skb,
 			      u32 crypto_sts_index);
 
 /**
- * fira_crypto_decrypt_frame() - Decrypt a 802154 frame using a given context.
+ * fira_crypto_decrypt_frame() - Decrypt a 802.15.4 frame using the given context.
  *
- * NOTE: The src address is given as an argument as it is a part of the nonce needed
- * to decrypt the frame and it is not present in the 802154 frame.
- * The length of the header is given because only the payload is encrypted even if
- * the encryption algorithm needs the whole 802154 frame.
- * Decryption is done in-place.
- * When called, this function shall reduce the
- * size of the skb of FIRA_CRYPTO_AEAD_AUTHSIZE and verify the correct bits in the
- * 802154 frame SCF.
+ * NOTE: The src address is given as an argument as it is a part of the nonce needed to perform the
+ * decryption and it is not present in the 802.15.4 frame. The length of the header is given as
+ * only the payload should be decrypted but the algorithm needs the whole 802.15.4 frame.
+ * Decryption is performed in-place. When calling this function, it shall decrease the size of the
+ * skb in FIRA_CRYPTO_AEAD_AUTHSIZE bytes and verify the correct bits in the 802.15.4 frame SCF.
  *
- * @crypto: The crypto to use to decrypt the frame.
- * @skb: The buffer containing the whole frame, skb->data points to the start of
- * the 802154 frame payload.
- * @header_len: The length of the 802154 frame header. Can be used to find the
- * start of the 802154 frame payload relative to skb->data.
- * @src_short_addr: The short source address attached to the frame.
- * @crypto_sts_index: The crypto STS index attached to the frame.
+ * @crypto: The context used for frame decryption.
+ * @skb: The buffer containing the whole frame, skb->data points to the start of the 802.15.4
+ * frame payload.
+ * @header_len: The length of the 802.15.4 frame header. Can be used to find the start of the
+ * 802.15.4 frame payload relative to skb->data.
+ * @src_short_addr: The short source address in the current frame.
+ * @crypto_sts_index: The current crypto STS index.
  *
  * Return: 0 or error.
  */

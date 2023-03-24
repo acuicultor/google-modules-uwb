@@ -495,6 +495,7 @@ static int fira_session_set_parameters(struct fira_local *local, u32 session_id,
 		session->measurements.reset = true;
 	}
 	/* STS and crypto parameters. */
+	P(STS_CONFIG, sts_config, u8, x);
 	PMEMCPY(VUPPER64, vupper64);
 	if (attrs[FIRA_SESSION_PARAM_ATTR_SESSION_KEY]) {
 		struct nlattr *attr =
@@ -502,8 +503,14 @@ static int fira_session_set_parameters(struct fira_local *local, u32 session_id,
 		memcpy(p->session_key, nla_data(attr), nla_len(attr));
 		p->session_key_len = nla_len(attr);
 	}
-	P(STS_CONFIG, sts_config, u8, x);
-	P(KEY_ROTATION, key_rotation, u8, x);
+	P(SUB_SESSION_ID, sub_session_id, u32, x);
+	if (attrs[FIRA_SESSION_PARAM_ATTR_SUB_SESSION_KEY]) {
+		struct nlattr *attr =
+			attrs[FIRA_SESSION_PARAM_ATTR_SUB_SESSION_KEY];
+		memcpy(p->sub_session_key, nla_data(attr), nla_len(attr));
+		p->sub_session_key_len = nla_len(attr);
+	}
+	P(KEY_ROTATION, key_rotation, u8, !!x);
 	P(KEY_ROTATION_RATE, key_rotation_rate, u8, x);
 	/* Report parameters. */
 	P(AOA_RESULT_REQ, aoa_result_req, u8, !!x);
@@ -751,6 +758,7 @@ static int fira_session_get_parameters(struct fira_local *local, u32 session_id)
 		goto nla_put_failure;
 	/* STS and crypto parameters. */
 	PMEMCPY(VUPPER64, vupper64);
+	P(SUB_SESSION_ID, sub_session_id, u32, x);
 	P(STS_CONFIG, sts_config, u8, x);
 	P(KEY_ROTATION, key_rotation, u8, x);
 	P(KEY_ROTATION_RATE, key_rotation_rate, u8, x);
@@ -816,9 +824,9 @@ static int fira_manage_controlees(struct fira_local *local,
 	};
 	struct nlattr *request;
 	struct nlattr *attrs[FIRA_CALL_CONTROLEE_ATTR_MAX + 1];
-	int r, rem, i, n_controlees = 0;
+	int r, rem, i, slot_duration_us, n_controlees = 0;
 	struct fira_session *session;
-	struct fira_controlee *controlee, *tmp_controlee;
+	struct fira_controlee *controlee = NULL, *tmp_controlee;
 	bool is_active;
 	struct list_head controlees;
 
@@ -850,8 +858,8 @@ static int fira_manage_controlees(struct fira_local *local,
 		}
 
 		if (!attrs[FIRA_CALL_CONTROLEE_ATTR_SHORT_ADDR] ||
-		    (!attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_ID] ^
-		     !attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY])) {
+		    (!attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_ID] &&
+		     attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY])) {
 			kfree(controlee);
 			r = -EINVAL;
 			goto end;
@@ -868,12 +876,14 @@ static int fira_manage_controlees(struct fira_local *local,
 			controlee->sub_session = true;
 			controlee->sub_session_id = nla_get_u32(
 				attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_ID]);
-			memcpy(controlee->sub_session_key,
-			       nla_data(
-				       attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]),
-			       nla_len(attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]));
-			controlee->sub_session_key_len = nla_len(
-				attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]);
+			if (attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]) {
+				memcpy(controlee->sub_session_key,
+				       nla_data(
+					       attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]),
+				       nla_len(attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]));
+				controlee->sub_session_key_len = nla_len(
+					attrs[FIRA_CALL_CONTROLEE_ATTR_SUB_SESSION_KEY]);
+			}
 		} else {
 			controlee->sub_session = false;
 		}
@@ -907,10 +917,8 @@ static int fira_manage_controlees(struct fira_local *local,
 		switch (call_id) {
 		case FIRA_CALL_NEW_CONTROLEE:
 			if (session->params.multi_node_mode ==
-				    FIRA_MULTI_NODE_MODE_UNICAST &&
-			    (!list_empty(&session->current_controlees) ||
-			     n_controlees > 1)) {
-				r = -EINVAL;
+				    FIRA_MULTI_NODE_MODE_UNICAST) {
+				r = -EPERM;
 				goto end;
 			}
 			break;
@@ -922,19 +930,36 @@ static int fira_manage_controlees(struct fira_local *local,
 		}
 	}
 
+	slot_duration_us = (session->params.slot_duration_dtu * 1000) /
+						(local->llhw->dtu_freq_hz / 1000);
+
 	switch (call_id) {
 	case FIRA_CALL_SET_CONTROLEE:
 		r = fira_session_set_controlees(local, session, &controlees,
-						n_controlees);
+						slot_duration_us, n_controlees);
 		break;
 	case FIRA_CALL_DEL_CONTROLEE:
-		r = fira_session_del_controlees(session, &controlees,
-						is_active);
+		if (n_controlees > 1) {
+			r = -EINVAL;
+			goto end;
+		} else {
+			/* 'controlee' points the unique entry in the list. */
+			r = fira_session_del_controlee(session, controlee,
+					is_active);
+		}
 		break;
 	/* FIRA_CALL_NEW_CONTROLEE. */
 	default:
-		r = fira_session_new_controlees(session, &controlees,
-						n_controlees, is_active);
+		if (n_controlees > 1) {
+			r = -EINVAL;
+			goto end;
+		} else {
+			/* 'controlee' points the unique entry in the list. */
+			r = fira_session_new_controlee(local, session,
+							   controlee,
+							   slot_duration_us,
+							   is_active);
+		}
 	}
 	if (r)
 		goto end;

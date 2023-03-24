@@ -54,18 +54,36 @@ int fira_sts_init(struct fira_session *session, int slot_duration_us,
 void fira_sts_deinit(struct fira_session *session);
 
 /**
- * fira_sts_rotate_keys() - To verify and rotate crypto keys if needed.
- * @session: The session for which the sts params are requested.
+ *  * fira_sts_controlee_init() - Initialize sub-session's STS context for a given controlee.
+ * @session: The session requesting sub-session context init.
+ * @controlee: The controlee containing the sub-session context init.
+ * @slot_duration_us: Duration of a slot in us.
+ * @current_channel: Current channel used by the llhw.
  *
  * Return: 0 or error.
  */
-int fira_sts_rotate_keys(struct fira_session *session);
+int fira_sts_controlee_init(struct fira_session *session,
+			    struct fira_controlee *controlee,
+			    int slot_duration_us,
+			    const struct mcps802154_channel *current_channel);
+
+/**
+ * fira_sts_controlee_deinit() - Deinitialize sub-session's STS context for a given controlee.
+ * @controlee: The controlee containing the sub-session context to deinit.
+ */
+void fira_sts_controlee_deinit(struct fira_controlee *controlee);
+
+/**
+ * fira_sts_rotate_keys() - Rotate intermediate keys if needed.
+ * @session: The session requesting key rotation.
+ */
+void fira_sts_rotate_keys(struct fira_session *session);
 
 /**
  * fira_sts_get_sts_params() - To fetch sts_params in order to configure the
  * current frame.
  * @session: The session for which the sts params are requested.
- * @slot_index: The index of the slot for which the STS shall be computed.
+ * @slot: The index of the slot for which the STS shall be computed.
  * @sts_v: STS Vector to be filled using the context.
  * @sts_v_size: Size of the requested STS vector.
  * @sts_key: STS Key to be set using the context.
@@ -73,20 +91,19 @@ int fira_sts_rotate_keys(struct fira_session *session);
  *
  * Return: 0 or error.
  */
-int fira_sts_get_sts_params(struct fira_session *session, const u32 slot_index,
-			    u8 *sts_v, u32 sts_v_size, u8 *sts_key,
-			    u32 sts_key_size);
+int fira_sts_get_sts_params(const struct fira_session *session,
+			    const struct fira_slot *slot, u8 *sts_v,
+			    u32 sts_v_size, u8 *sts_key, u32 sts_key_size);
 
 /**
-* fira_sts_get_phy_sts_index() - Computes the phy sts index related to
-* a giver slot of a given session.
-* @session: The session for which the phy sts index is needed.
-* @slot_index: The index of the slot index for which the STS index is needed.
-*
-* Return: phy_sts_index for the current slot.
-*/
+ * fira_sts_get_phy_sts_index() - Compute phy sts index on a specific slot for a given session.
+ * @session: The session requesting phy sts index.
+ * @slot: The slot associated with the desired phy sts index.
+ *
+ *  Return: phy sts index on the current slot.
+ */
 u32 fira_sts_get_phy_sts_index(const struct fira_session *session,
-			       const u32 slot_index);
+				const struct fira_slot *slot);
 
 /**
  * fira_sts_convert_phy_sts_idx_to_time_indexes() - Convert a given phy
@@ -107,15 +124,18 @@ int fira_sts_convert_phy_sts_idx_to_time_indexes(
 /**
 * fira_sts_prepare_decrypt() - Prepare skb for header decryption and verification.
 * @session: The session to for which the indexes are needed.
+* @slot: The slot for which the frame should be decrypted.
 * @skb: Buffer containing the frame to decrypt.
 *
 * Return: 0 or error.
 */
-int fira_sts_prepare_decrypt(struct fira_session *session, struct sk_buff *skb);
+int fira_sts_prepare_decrypt(struct fira_session *session,
+			     const struct fira_slot *slot, struct sk_buff *skb);
 
 /**
 * fira_sts_encrypt_frame() - Encrypt the given FiRa 802154 frame.
 * @session: The session to use to encrypt the frame.
+* @slot: The slot with the frame to encrypt.
 * @skb: Buffer containing the frame to encrypt.
 * @header_len: Length of the 802154 header. Can be used to find the start of the
 * payload (relative to skb->data).
@@ -124,10 +144,9 @@ int fira_sts_prepare_decrypt(struct fira_session *session, struct sk_buff *skb);
 *
 * Return: 0 or error.
 */
-int fira_sts_encrypt_frame(struct fira_session *session, struct sk_buff *skb,
-			   int header_len, __le16 src_short_addr,
-			   const u32 slot_index);
-
+int fira_sts_encrypt_frame(const struct fira_session *session,
+			   const struct fira_slot *slot, struct sk_buff *skb,
+			   int header_len, __le16 src_short_addr);
 /**
 * fira_sts_decrypt_frame() - Decrypt the given FiRa 802154 frame.
 * @session: The session to use to decrypt the frame.
@@ -135,37 +154,40 @@ int fira_sts_encrypt_frame(struct fira_session *session, struct sk_buff *skb,
 * @header_len: Length of the 802154 header. Used to find the start of the
 * frame payload (relative to skb->data).
 * @src_short_addr: Source short address.
-* @slot_index: The slot index of the frame to decrypt.
 *
 * Return: 0 or error.
 */
-int fira_sts_decrypt_frame(struct fira_session *session, struct sk_buff *skb,
-			   int header_len, __le16 src_short_addr,
-			   u32 slot_index);
+int fira_sts_decrypt_frame(const struct fira_session *session,
+			   const struct fira_slot *slot, struct sk_buff *skb,
+			   int header_len, __le16 src_short_addr);
 
 /**
 * fira_sts_encrypt_hie() - Encrypt the HIE stored in a FiRa 802154
 * frame.
 * @session: The session to attached to the HIE.
+* @slot: The slot with the HIE to encrypt.
 * @skb: Buffer containing the frame to encrypt.
 * @hie_offset: Offset to the start of the HIE (relative to skb->data) to encrypt.
 * @hie_len: Length of the HIE to encrypt.
 *
 * Return: 0 or error.
 */
-int fira_sts_encrypt_hie(struct fira_session *session, struct sk_buff *skb,
+int fira_sts_encrypt_hie(const struct fira_session *session,
+			 const struct fira_slot *slot, struct sk_buff *skb,
 			 int hie_offset, int hie_len);
 
 /**
 * fira_sts_decrypt_hie() - Decrypt the HIE stored in a FiRa 802154 frame.
 * @session: The session attached to the HIE
+* @slot: The slot with the HIE to decrypt.
 * @skb: Buffer containing the frame to decrypt.
 * @hie_offset: Offset to the start of the HIE (relative to skb->data) to decrypt.
 * @hie_len: Length of the HIE to decrypt.
 *
 * Return: 0 or error.
 */
-int fira_sts_decrypt_hie(struct fira_session *session, struct sk_buff *skb,
-			 int hie_offset, int hie_len);
 
+int fira_sts_decrypt_hie(const struct fira_session *session,
+			 const struct fira_slot *slot, struct sk_buff *skb,
+			 int hie_offset, int hie_len);
 #endif /* NET_MCPS802154_FIRA_STS_H */

@@ -103,7 +103,7 @@ static void fira_access_setup_frame(struct fira_local *local,
 	bool is_first_frame = slot->message_id == FIRA_MESSAGE_ID_CONTROL;
 	bool request_rssi = session->params.report_rssi;
 	if (is_rframe) {
-		fira_sts_get_sts_params(session, slot->index, sts_params->v,
+		fira_sts_get_sts_params(session, slot, sts_params->v,
 					sizeof(sts_params->v), sts_params->key,
 					sizeof(sts_params->key));
 		sts_params->n_segs = params->number_of_sts_segments;
@@ -566,8 +566,7 @@ static void fira_rx_frame_control(struct fira_local *local,
 					       slot->controlee->short_addr;
 
 	/* Continue to decode the frame. */
-	r = fira_sts_decrypt_frame(session, skb, header_len, src_short_addr,
-				   slot->index);
+	r = fira_sts_decrypt_frame(session, slot, skb, header_len, src_short_addr);
 	if (r)
 		goto failed;
 	r = fira_frame_control_payload_check(local, skb, &ie_get, &n_slots,
@@ -844,8 +843,8 @@ static struct sk_buff *fira_tx_get_frame(struct mcps802154_access *access,
 	header_len = mcps802154_ie_put_end(skb, false);
 	WARN_ON(header_len < 0);
 
-	if (fira_sts_encrypt_frame(local->current_session, skb, header_len,
-				   local->src_short_addr, slot->index)) {
+	if (fira_sts_encrypt_frame(local->current_session, slot, skb, header_len,
+				   local->src_short_addr)) {
 		kfree_skb(skb);
 		return NULL;
 	}

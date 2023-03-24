@@ -623,8 +623,10 @@ void fira_session_free(struct fira_local *local, struct fira_session *session)
 
 int fira_session_set_controlees(struct fira_local *local,
 				struct fira_session *session,
-				struct list_head *controlees, int n_controlees)
+				struct list_head *controlees,
+				int slot_duration_us, int n_controlees)
 {
+	int r;
 	struct fira_controlee *controlee, *tmp_controlee;
 
 	if (!fira_frame_check_n_controlees(session, n_controlees, false))
@@ -632,74 +634,88 @@ int fira_session_set_controlees(struct fira_local *local,
 
 	list_for_each_entry_safe (controlee, tmp_controlee,
 				  &session->current_controlees, entry) {
+		fira_sts_controlee_deinit(controlee);
 		list_del(&controlee->entry);
 		kfree(controlee);
 	}
 	list_for_each_entry_safe (controlee, tmp_controlee, controlees, entry) {
+		r = fira_sts_controlee_init(
+			session, controlee, slot_duration_us,
+			mcps802154_get_current_channel(local->llhw));
+		if (r)
+			return r;
 		list_move_tail(&controlee->entry, &session->current_controlees);
 	}
 	session->n_current_controlees = n_controlees;
 	return 0;
 }
 
-int fira_session_new_controlees(struct fira_session *session,
-				struct list_head *controlees, int n_controlees,
-				bool async)
+int fira_session_new_controlee(struct fira_local *local,
+				struct fira_session *session,
+				struct fira_controlee *new_controlee,
+				int slot_duration_us, bool active_session)
 {
-	struct fira_controlee *controlee, *new_controlee, *tmp_new_controlee;
+	int r;
+	struct fira_controlee *controlee;
 
-	if (!fira_frame_check_n_controlees(
-		    session, session->n_current_controlees + n_controlees,
-		    async))
-		return -EINVAL;
+	if (session->n_current_controlees == FIRA_CONTROLEES_MAX)
+		return -ENOBUFS;
 
-	list_for_each_entry (new_controlee, controlees, entry) {
-		list_for_each_entry (controlee, &session->current_controlees,
-				     entry) {
-			if (new_controlee->short_addr == controlee->short_addr)
-				return -EINVAL;
-		}
+	list_for_each_entry (controlee, &session->current_controlees, entry) {
+		if (new_controlee->short_addr == controlee->short_addr)
+			return -EEXIST;
 	}
 
-	list_for_each_entry_safe (new_controlee, tmp_new_controlee, controlees,
-				  entry) {
-		if (async)
-			new_controlee->state = FIRA_CONTROLEE_STATE_PENDING_RUN;
-		list_move_tail(&new_controlee->entry,
-			       &session->current_controlees);
-		session->n_current_controlees++;
+	if (active_session) {
+		new_controlee->state = FIRA_CONTROLEE_STATE_PENDING_RUN;
+	} else {
+		r = fira_sts_controlee_init(session, new_controlee,
+				slot_duration_us,
+				mcps802154_get_current_channel(local->llhw));
+		if (r)
+			return r;
 	}
-
+	list_move_tail(&new_controlee->entry, &session->current_controlees);
+	session->n_current_controlees++;
 	return 0;
 }
 
-int fira_session_del_controlees(struct fira_session *session,
-				struct list_head *controlees, bool async)
+int fira_session_del_controlee(struct fira_session *session,
+				struct fira_controlee *del_controlee,
+				bool active_session)
 {
-	struct fira_controlee *controlee, *new_controlee, *tmp_controlee,
-		*tmp_new_controlee;
+	struct fira_controlee *controlee, *tmp_controlee;
+	int ret = -ENOENT;
 
-	list_for_each_entry_safe (new_controlee, tmp_new_controlee, controlees,
-				  entry) {
-		list_for_each_entry_safe (controlee, tmp_controlee,
-					  &session->current_controlees, entry) {
-			if (new_controlee->short_addr ==
-			    controlee->short_addr) {
-				if (async) {
+	if (session->n_current_controlees < 1)
+		return -ENOENT;
+
+	list_for_each_entry_safe (controlee, tmp_controlee,
+				  &session->current_controlees, entry) {
+		if (del_controlee->short_addr == controlee->short_addr) {
+			if (active_session) {
+				if (controlee->state ==
+				    FIRA_CONTROLEE_STATE_STOPPING)
+					controlee->state =
+						FIRA_CONTROLEE_STATE_DELETING;
+				else if (controlee->state !=
+					FIRA_CONTROLEE_STATE_DELETING) {
 					controlee->state =
 						FIRA_CONTROLEE_STATE_PENDING_DEL;
 				} else {
+					fira_sts_controlee_deinit(controlee);
 					list_del(&controlee->entry);
 					kfree(controlee);
 					session->n_current_controlees--;
 				}
-				break;
 			}
+			list_del(&del_controlee->entry);
+			kfree(del_controlee);
+			ret = 0;
+			break;
 		}
-		list_del(&new_controlee->entry);
-		kfree(new_controlee);
 	}
-	return 0;
+	return ret;
 }
 
 void fira_session_stop_controlees(struct fira_session *session)
@@ -741,13 +757,21 @@ void fira_session_update_controlees(struct fira_local *local,
 {
 	struct fira_controlee *controlee, *tmp_controlee;
 	bool reset_rx_ctx = false;
-	int i;
+	int i, slot_duration_us;
+
+	slot_duration_us = (session->params.slot_duration_dtu * 1000) /
+		   (local->llhw->dtu_freq_hz / 1000);
 
 	list_for_each_entry_safe (controlee, tmp_controlee,
 				  &session->current_controlees, entry) {
 		if (controlee->state == FIRA_CONTROLEE_STATE_PENDING_RUN) {
 			controlee->state = FIRA_CONTROLEE_STATE_RUNNING;
 			reset_rx_ctx = true;
+			if (fira_sts_controlee_init(
+				    session, controlee, slot_duration_us,
+				    mcps802154_get_current_channel(local->llhw)))
+				controlee->state =
+					FIRA_CONTROLEE_STATE_DELETING;
 		} else if (controlee->state == FIRA_CONTROLEE_STATE_RUNNING) {
 			/* Stop raised by max number of measurements threshold. */
 			if (session->stop_request)

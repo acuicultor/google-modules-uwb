@@ -271,8 +271,8 @@ TRACE_EVENT(region_fira_session_params,
 		__field(enum fira_mac_fcs_type, mac_fcs_type)
 		__field(enum fira_sts_mode, sts_config)
 		__array(u8, vupper64, FIRA_VUPPER64_SIZE)
+		__field(u32, sub_session_id)
 		__field(u32, session_key_len)
-		__array(u8, session_key, FIRA_KEY_SIZE_MIN)
 		__field(bool, key_rotation)
 		__field(int, key_rotation_rate)
 		__field(bool, aoa_result_req)
@@ -307,8 +307,8 @@ TRACE_EVENT(region_fira_session_params,
 		__entry->mac_fcs_type = params->mac_fcs_type;
 		__entry->sts_config = params->sts_config;
 		memcpy(__entry->vupper64, params->vupper64, sizeof(params->vupper64));
+		__entry->sub_session_id = params->sub_session_id;
 		__entry->session_key_len = params->session_key_len;
-		memcpy(__entry->session_key, params->session_key, params->session_key_len);
 		__entry->key_rotation = params->key_rotation;
 		__entry->key_rotation_rate = params->key_rotation_rate;
 		__entry->aoa_result_req = params->aoa_result_req;
@@ -324,8 +324,7 @@ TRACE_EVENT(region_fira_session_params,
 		  "max_rr_retry=%d round_duration_slots=%d round_hopping=%d "
 		  "priority=%d channel_number=%d preamble_code_index=%d rframe_config=%s "
 		  "preamble_duration=%s sfd_id=%d number_of_sts_segments=%s psdu_data_rate=%s mac_fcs_type=%s "
-		  "sts_config=%s vupper64=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x session_key_len=%d "
-		  "session_key=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x "
+		  "sts_config=%s vupper64=%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x sub_session_id=%d session_key_len=%d "
 		  "key_rotation=%d key_rotation_rate=%d aoa_result_req=%d report_tof=%d report_aoa_azimuth=%d "
 		  "report_aoa_elevation=%d report_aoa_fom=%d diagnostics=%d",
 		  FIRA_SESSION_PR_ARG,
@@ -353,11 +352,8 @@ TRACE_EVENT(region_fira_session_params,
 		  __print_symbolic(__entry->sts_config, FIRA_STS_MODE_SYMBOLS),
 		  __entry->vupper64[0], __entry->vupper64[1], __entry->vupper64[2], __entry->vupper64[3],
 		  __entry->vupper64[4], __entry->vupper64[5], __entry->vupper64[6], __entry->vupper64[7],
+		  __entry->sub_session_id,
 		  __entry->session_key_len,
-		  __entry->session_key[0], __entry->session_key[1], __entry->session_key[2], __entry->session_key[3],
-		  __entry->session_key[4], __entry->session_key[5], __entry->session_key[6], __entry->session_key[7],
-		  __entry->session_key[8], __entry->session_key[9], __entry->session_key[10], __entry->session_key[11],
-		  __entry->session_key[12], __entry->session_key[13], __entry->session_key[14], __entry->session_key[15],
 		  __entry->key_rotation,
 		  __entry->key_rotation_rate,
 		  __entry->aoa_result_req,

@@ -61,10 +61,6 @@ static inline void platform_free(void *p) { kfree(p); }
 
 #define FIRA_CRYPTO_AEAD_AUTHSIZE	8
 
-struct fira_crypto {
-	u32 session_id;
-};
-
 /**
  * struct fira_crypto_aead - Context for payload encryption/decryption.
  */
@@ -128,18 +124,11 @@ struct fira_crypto_base {
 	struct fira_crypto_aead aead;
 };
 
-struct fira_crypto_ctx {
+struct fira_crypto {
 	/**
-	 * @session_id: Id of the session using the fira_crypto.
-	 * This can also be a subsession key when this STS mode is active.
+	 * @phy_sts_index_init: Initial phy_sts_index deduced at context init.
 	 */
-	u32 session_id;
-
-	/**
-	 * @ca_entry: Entry in list .
-	 */
-	struct list_head entry;
-
+	u32 phy_sts_index_init;
 	/**
 	 * @sts_config: The type of STS requested for this crypto.
 	 */
@@ -169,8 +158,6 @@ struct fira_crypto_ctx {
 	 */
 	u8 vupper64[FIRA_VUPPER64_SIZE];
 };
-
-static LIST_HEAD(fira_crypto_ctx_list);
 
 static int fira_crypto_kdf(const u8 *input_key, unsigned int input_key_len,
 			const char *label, const u8 *context, u8 *output_key,
@@ -246,9 +233,6 @@ static int fira_crypto_aead_encrypt(struct fira_crypto_aead *aead,
 
 	if (!r)
 		skb_put(skb, FIRA_CRYPTO_AEAD_AUTHSIZE);
-	else
-		skb->data[IEEE802154_FC_LEN + IEEE802154_SHORT_ADDR_LEN] |=
-			IEEE802154_SCF_NO_FRAME_COUNTER;
 
 	return r;
 }
@@ -288,35 +272,13 @@ static int fira_crypto_aead_decrypt(struct fira_crypto_aead *aead,
 static void fira_crypto_aead_destroy(struct fira_crypto_aead *aead)
 {
 	mcps_crypto_aead_aes_ccm_star_128_destroy(aead->ctx);
+	aead->ctx = NULL;
 }
 
-/*! ----------------------------------------------------------------------------------------------
- * @brief This function returns the fira crypto context relative to a sessionID
- *
- * input parameters:
- * @param session_id - sessionId to articulate the research on.
- *
- * output parameters
- *
- * return NULL if error or struct fira_crypto_ctx pointer.
- */
-struct fira_crypto_ctx *get_session(u32 session_id)
-{
-	struct fira_crypto_ctx *session;
-
-	list_for_each_entry(session, &fira_crypto_ctx_list, entry) {
-		if (session->session_id == session_id)
-			return session;
-	}
-
-	return NULL;
-}
-
-static void remove_session(struct fira_crypto_ctx *session)
+static void remove_session(struct fira_crypto *session)
 {
 	fira_crypto_aead_destroy(&session->base.aead);
 	mcps_crypto_aes_ecb_128_destroy(session->ecb_ctx);
-	list_del(&session->entry);
 	/* Wipe all derived keys */
 	memzero_explicit(session, sizeof(*session));
 	platform_free(session);
@@ -344,63 +306,33 @@ int fira_crypto_init(void *key_manager)
 
 /************************************** FIRA STS API FCTS ***************************************/
 
-int fira_crypto_context_init(const struct fira_crypto_params *params,
+int fira_crypto_context_init(const struct fira_crypto_params *crypto_params,
 		struct fira_crypto **crypto)
 {
-	int status = -1;
-	int r;
-	struct fira_crypto *fira_crypto_ext;
-	struct fira_crypto_ctx *fira_crypto_ctx;
+	int status = 0;
+	struct fira_crypto *fira_crypto_ctx;
 	u8 session_key[AES_KEYSIZE_128];
 
-	/* checks the sessionId is not already allocated */
-	fira_crypto_ctx = get_session(params->session_id);
-	if (fira_crypto_ctx) {
-		pr_err("Crypto context already exists for session id %u\n", params->session_id);
-		/* Remove the context */
-		remove_session(fira_crypto_ctx);
-	}
-
-	fira_crypto_ext = platform_malloc(sizeof(*fira_crypto_ext));
-	memset(fira_crypto_ext, 0, sizeof(*fira_crypto_ext));
 	fira_crypto_ctx = platform_malloc(sizeof(*fira_crypto_ctx));
-	memset(fira_crypto_ctx, 0, sizeof(*fira_crypto_ctx));
-	if (fira_crypto_ctx && fira_crypto_ext) {
-		fira_crypto_ctx->session_id = params->session_id;
-		fira_crypto_ext->session_id = params->session_id;
-		/* Add this context in the global list */
-		list_add(&fira_crypto_ctx->entry, &fira_crypto_ctx_list);
-		status = 0;
-	} else {
-		pr_err("Crypto context initialisation failed. Not enough memory !\n");
-	}
 
-	if (status)
-		return status;
+	if (!fira_crypto_ctx)
+		return -ENOMEM;
+
+	memset(fira_crypto_ctx, 0, sizeof(*fira_crypto_ctx));
 
 	/* Retrieve session key */
-	switch (params->sts_config) {
+	switch (crypto_params->sts_config) {
 	case FIRA_STS_MODE_STATIC:
 		memcpy(session_key, "StaticTSStaticTS", AES_KEYSIZE_128);
 		fira_crypto_ctx->base.key_size = AES_KEYSIZE_128;
-		memcpy(fira_crypto_ctx->vupper64, params->vupper64, FIRA_VUPPER64_SIZE);
+		memcpy(fira_crypto_ctx->vupper64, crypto_params->vupper64, FIRA_VUPPER64_SIZE);
 		break;
-
-#ifdef CONFIG_FIRA_CRYPTO_HAVE_SE
-	case FIRA_STS_MODE_DYNAMIC:
-	case FIRA_STS_MODE_DYNAMIC_INDIVIDUAL_KEY:
-		status = key_manager_consume_key(params->session_id,
-				session_key, AES_KEYSIZE_128);
-		fira_crypto_ctx->base.key_size = AES_KEYSIZE_128;
-		break;
-#endif // CONFIG_FIRA_CRYPTO_HAVE_SE
 
 	case FIRA_STS_MODE_PROVISIONED:
 	case FIRA_STS_MODE_PROVISIONED_INDIVIDUAL_KEY:
-		if (params->prov_session_key) {
-			memcpy(session_key, params->prov_session_key,
-					params->prov_session_key_len);
-			fira_crypto_ctx->base.key_size = params->prov_session_key_len;
+		if (crypto_params->key) {
+			memcpy(session_key, crypto_params->key, crypto_params->key_len);
+			fira_crypto_ctx->base.key_size = crypto_params->key_len;
 		} else {
 			/* Session key not set */
 			pr_err("Session key not provisioned !\n");
@@ -414,53 +346,51 @@ int fira_crypto_context_init(const struct fira_crypto_params *params,
 		status = -1;
 	}
 
-	fira_crypto_ctx->sts_config = params->sts_config;
+	fira_crypto_ctx->sts_config = crypto_params->sts_config;
 
 	if (!status) {
 		/* Compute Config Digest */
 		static const u8 zero_key[AES_KEYSIZE_128];
 
-		r = mcps_crypto_cmac_aes_128_digest(zero_key,
-				params->concat_params,
-				params->concat_params_size,
+		status = mcps_crypto_cmac_aes_128_digest(zero_key,
+				crypto_params->concat_params,
+				crypto_params->concat_params_size,
 				fira_crypto_ctx->base.config_digest);
-		if (r)
+		if (status)
 			goto error_out;
 
 		/* Compute secDataProtectionKey */
-		r = fira_crypto_kdf(session_key,
+		status = fira_crypto_kdf(session_key,
 				fira_crypto_ctx->base.key_size,
 				"DataPrtK",
 				fira_crypto_ctx->base.config_digest,
 				fira_crypto_ctx->base.data_protection_key,
 				FIRA_KEY_SIZE_MIN);
-		if (r)
+		if (status)
 			goto error_out;
 
-		if (params->sts_config == FIRA_STS_MODE_STATIC) {
+		if (crypto_params->sts_config == FIRA_STS_MODE_STATIC) {
 			/* rotate keys only once for static_sts */
-			r = fira_crypto_rotate_elements(
-					fira_crypto_ext,
+			status = fira_crypto_rotate_elements(
+					fira_crypto_ctx,
 					0);
 		} else {
 
 			/* Compute secPrivacy Key and setup AES ECB context */
-			r = fira_crypto_kdf(session_key,
-					fira_crypto_ctx->base.key_size,
-					"PrivacyK",
-					fira_crypto_ctx->base.config_digest,
-					fira_crypto_ctx->privacy_key,
-					FIRA_KEY_SIZE_MIN);
-
+			status = fira_crypto_kdf(
+				session_key, fira_crypto_ctx->base.key_size,
+				"PrivacyK", fira_crypto_ctx->base.config_digest,
+				fira_crypto_ctx->privacy_key,
+				FIRA_KEY_SIZE_MIN);
 		}
-		if (r)
+		if (status)
 			goto error_out;
 	}
 
 	/* Wipe session key */
 	memzero_explicit(session_key, AES_KEYSIZE_128);
 
-	*crypto = fira_crypto_ext;
+	*crypto = fira_crypto_ctx;
 
 	return status;
 
@@ -469,27 +399,23 @@ error_out:
 	memzero_explicit(session_key, AES_KEYSIZE_128);
 	*crypto = NULL;
 	remove_session(fira_crypto_ctx);
-	platform_free(fira_crypto_ext);
-	return r;
+	return status;
 }
 
 /**
- * fira_crypto_dynamic_deinit() - De-initialize a dynamic STS context.
+ * fira_crypto_context_deinit() - De-initialize a crypto context.
  * @session_id: Pointer to the session id.
  */
-void fira_crypto_context_deinit(struct fira_crypto *crypto)
+void fira_crypto_context_deinit(struct fira_crypto *fira_crypto_ctx)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
-
 	if (fira_crypto_ctx) {
 		/* Remove the context */
 		remove_session(fira_crypto_ctx);
+		fira_crypto_ctx = NULL;
 	} else {
 		/* The context doesn't exist */
-		pr_err("Crypto context unknown for session id %u\n", fira_session_id);
+		pr_err("Crypto context NULL\n");
 	}
-	platform_free(crypto);
 }
 
 /**
@@ -504,13 +430,14 @@ void fira_crypto_context_deinit(struct fira_crypto *crypto)
  *
  * Return: 0 or error.
  */
-int fira_crypto_rotate_elements(struct fira_crypto *crypto,
+int fira_crypto_rotate_elements(struct fira_crypto *fira_crypto_ctx,
 				const u32 crypto_sts_index)
 {
 	int r = 0;
 	u8 context[AES_BLOCK_SIZE];
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
+
+	if (!fira_crypto_ctx)
+		goto error_out;
 
 	memcpy(context, fira_crypto_ctx->base.config_digest + sizeof(u32),
 			AES_BLOCK_SIZE - sizeof(u32));
@@ -550,22 +477,28 @@ error_out:
 	return r;
 }
 
+u32 fira_crypto_get_phy_sts_index_init(const struct fira_crypto *crypto)
+{
+	if (!crypto)
+		return -1;
+	return crypto->phy_sts_index_init;
+}
+
 /**
  * fira_crypto_build_phy_sts_index_init() - Build the phy STS index init value
  * related to the given crypto context.
  *
  * @crypto: The context to use to compute the phy STS index init value.
- * @phy_sts_index_init: The pointer where the computed value will be stored.
  *
  * Return: 0 or error.
  */
-int fira_crypto_build_phy_sts_index_init(struct fira_crypto *crypto,
-					 u32 *phy_sts_index_init)
+int fira_crypto_build_phy_sts_index_init(struct fira_crypto *fira_crypto_ctx)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
-	int r;
+	int r = -1;
 	u8 phy_sts_index_init_tmp[AES_KEYSIZE_128];
+
+	if (!fira_crypto_ctx)
+		goto error_out;
 
 	r = fira_crypto_kdf(fira_crypto_ctx->base.data_protection_key,
 			fira_crypto_ctx->base.key_size,
@@ -575,10 +508,10 @@ int fira_crypto_build_phy_sts_index_init(struct fira_crypto *crypto,
 	if (r)
 		goto error_out;
 
-	*phy_sts_index_init =
+	fira_crypto_ctx->phy_sts_index_init =
 		get_unaligned_be32(phy_sts_index_init_tmp +
 				fira_crypto_ctx->base.key_size - sizeof(u32)) &
-		FIRA_CRYPTO_KEY_STS_MASK;
+				FIRA_CRYPTO_KEY_STS_MASK;
 	return 0;
 
 error_out:
@@ -600,15 +533,16 @@ error_out:
  *
  * Return: 0 or error.
  */
-int fira_crypto_get_sts_params(struct fira_crypto *crypto,
+int fira_crypto_get_sts_params(struct fira_crypto *fira_crypto_ctx,
 		const u32 crypto_sts_index, u8 *sts_v, u32 sts_v_size,
 		u8 *sts_key, u32 sts_key_size)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
 	u8 *vupper64 = NULL;
 	u32 v_counter;
 	u8 *sts_v_temp;
+
+	if (!fira_crypto_ctx)
+		return -1;
 
 	if (fira_crypto_ctx->sts_config == FIRA_STS_MODE_STATIC)
 		vupper64 = fira_crypto_ctx->vupper64;
@@ -660,11 +594,11 @@ int fira_crypto_get_sts_params(struct fira_crypto *crypto,
  *
  * Return: 0 or error.
  */
-int fira_crypto_encrypt_frame(struct fira_crypto *crypto, struct sk_buff *skb,
+int fira_crypto_encrypt_frame(struct fira_crypto *fira_crypto_ctx, struct sk_buff *skb,
 		int header_len, __le16 src_short_addr, u32 crypto_sts_index)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
+	if (!fira_crypto_ctx)
+		return -1;
 
 	return fira_crypto_aead_encrypt(&fira_crypto_ctx->base.aead, skb, header_len,
 					src_short_addr, crypto_sts_index);
@@ -692,11 +626,11 @@ int fira_crypto_encrypt_frame(struct fira_crypto *crypto, struct sk_buff *skb,
  *
  * Return: 0 or error.
  */
-int fira_crypto_decrypt_frame(struct fira_crypto *crypto, struct sk_buff *skb,
+int fira_crypto_decrypt_frame(struct fira_crypto *fira_crypto_ctx, struct sk_buff *skb,
 		int header_len, __le16 src_short_addr, u32 crypto_sts_index)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
+	if (!fira_crypto_ctx)
+		return -1;
 
 	return fira_crypto_aead_decrypt(&fira_crypto_ctx->base.aead, skb, header_len,
 					src_short_addr, crypto_sts_index);
@@ -711,12 +645,13 @@ int fira_crypto_decrypt_frame(struct fira_crypto *crypto, struct sk_buff *skb,
  *
  * Return: 0 or error.
  */
-int fira_crypto_encrypt_hie(struct fira_crypto *crypto, struct sk_buff *skb,
+int fira_crypto_encrypt_hie(struct fira_crypto *fira_crypto_ctx, struct sk_buff *skb,
 		int hie_offset, int hie_len)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
 	int rc;
+
+	if (!fira_crypto_ctx)
+		return -1;
 
 	if (fira_crypto_ctx->sts_config == FIRA_STS_MODE_STATIC)
 		return 0;
@@ -753,12 +688,13 @@ int fira_crypto_encrypt_hie(struct fira_crypto *crypto, struct sk_buff *skb,
  *
  * Return: 0 or error.
  */
-int fira_crypto_decrypt_hie(struct fira_crypto *crypto, struct sk_buff *skb,
+int fira_crypto_decrypt_hie(struct fira_crypto *fira_crypto_ctx, struct sk_buff *skb,
 		int hie_offset, int hie_len)
 {
-	u32 fira_session_id = crypto->session_id;
-	struct fira_crypto_ctx *fira_crypto_ctx = get_session(fira_session_id);
 	int rc;
+
+	if (!fira_crypto_ctx)
+		return -1;
 
 	if (fira_crypto_ctx->sts_config == FIRA_STS_MODE_STATIC)
 		return 0;
@@ -798,6 +734,7 @@ u32 fira_crypto_get_capabilities(void)
 
 	status += STS_CAP(STATIC);
 	status += STS_CAP(PROVISIONED);
+	status += STS_CAP(PROVISIONED_INDIVIDUAL_KEY);
 
 #ifdef CONFIG_FIRA_CRYPTO_HAVE_SE
 	status += STS_CAP(DYNAMIC);
@@ -957,23 +894,15 @@ static int fira_crypto_test_static(void)
 		0x9b, 0x0b
 	};
 	int err = -1, r;
-	struct fira_crypto *crypto = NULL;
-	struct fira_crypto_ctx *fira_crypto_ctx;
-	u32 phy_sts_index_init = 0;
+	struct fira_crypto *fira_crypto_ctx;
 	const u32 crypto_sts_index = 0;
 	u8 sts_v[16];
 	u8 sts_key[16];
 	struct sk_buff *skb = NULL;
 
-	r = fira_crypto_context_init(&param, &crypto);
-	if (r != 0 || !crypto || crypto->session_id != param.session_id) {
+	r = fira_crypto_context_init(&param, &fira_crypto_ctx);
+	if (r != 0 || !fira_crypto_ctx) {
 		pr_err("fira_crypto_context_init fail: %d\n", r);
-		goto end;
-	}
-
-	fira_crypto_ctx = get_session(param.session_id);
-	if (!fira_crypto_ctx) {
-		pr_err("cannot get session\n");
 		goto end;
 	}
 
@@ -1014,17 +943,17 @@ static int fira_crypto_test_static(void)
 		goto end;
 	}
 
-	r = fira_crypto_build_phy_sts_index_init(crypto, &phy_sts_index_init);
+	r = fira_crypto_build_phy_sts_index_init(fira_crypto_ctx);
 	if (r != 0) {
 		pr_err("fira_crypto_build_phy_sts_index_init fail: %d\n", r);
 		goto end;
 	}
-	if (phy_sts_index_init != 0x0b9bbe78) {
+	if (fira_crypto_ctx->phy_sts_index_init != 0x0b9bbe78) {
 		pr_err("phy_sts_index_init fail\n");
 		goto end;
 	}
 
-	r = fira_crypto_get_sts_params(crypto, crypto_sts_index, sts_v,
+	r = fira_crypto_get_sts_params(fira_crypto_ctx, crypto_sts_index, sts_v,
 				sizeof(sts_v), sts_key, sizeof(sts_key));
 	if (r != 0) {
 		pr_err("fira_crypto_get_sts_params fail: %d\n", r);
@@ -1051,7 +980,7 @@ static int fira_crypto_test_static(void)
 	skb_put_data(skb, Header, sizeof(Header));
 
 	/* Encrypt Header first (NOP in Static STS) */
-	r = fira_crypto_encrypt_hie(crypto, skb, 5, 21);
+	r = fira_crypto_encrypt_hie(fira_crypto_ctx, skb, 5, 21);
 	if (r != 0) {
 		pr_err("fira_crypto_encrypt_hie fail: %d\n", r);
 		goto end;
@@ -1071,7 +1000,7 @@ static int fira_crypto_test_static(void)
 
 	skb_put_data(skb, RCM, sizeof(RCM));
 
-	r = fira_crypto_encrypt_frame(crypto, skb, 28, 0xaaa1, 0);
+	r = fira_crypto_encrypt_frame(fira_crypto_ctx, skb, 28, 0xaaa1, 0);
 	if (r != 0) {
 		pr_err("fira_crypto_encrypt_frame fail: %d\n", r);
 		goto end;
@@ -1094,7 +1023,7 @@ static int fira_crypto_test_static(void)
 	skb_pull(skb, 28); /* skip header */
 
 	skb_trim(skb, skb->len - FIRA_CRYPTO_AEAD_AUTHSIZE);
-	r = fira_crypto_decrypt_frame(crypto, skb, 28, 0xaaa1, 0);
+	r = fira_crypto_decrypt_frame(fira_crypto_ctx, skb, 28, 0xaaa1, 0);
 	if (r != 0) {
 		pr_err("fira_crypto_decrypt_frame fail: %d\n", r);
 		goto end;
@@ -1118,7 +1047,7 @@ static int fira_crypto_test_static(void)
 	skb_put_data(skb, Header_Rcv, sizeof(Header_Rcv));
 
 	/* Decrypt header (NOP in Static STS) */
-	r = fira_crypto_decrypt_hie(crypto, skb, 10, 16);
+	r = fira_crypto_decrypt_hie(fira_crypto_ctx, skb, 10, 16);
 	if (r != 0) {
 		pr_err("fira_crypto_decrypt_hie fail: %d\n", r);
 		goto end;
@@ -1136,8 +1065,8 @@ static int fira_crypto_test_static(void)
 end:
 	if (skb)
 		kfree_skb(skb);
-	if (crypto)
-		fira_crypto_context_deinit(crypto);
+	if (fira_crypto_ctx)
+		fira_crypto_context_deinit(fira_crypto_ctx);
 
 	return err;
 }
@@ -1169,8 +1098,8 @@ static int fira_crypto_test_provisioned(void)
 		.sts_config = FIRA_STS_MODE_PROVISIONED,
 		.concat_params = config_P_STS,
 		.concat_params_size = sizeof(config_P_STS),
-		.prov_session_key = sessionKey,
-		.prov_session_key_len = sizeof(sessionKey)
+		.key = sessionKey,
+		.key_len = sizeof(sessionKey)
 	};
 	static const u8 configDigest_p_sts[] = {
 		0x08, 0x93, 0x66, 0xba, 0xfb, 0x3b, 0x24, 0xbf,
@@ -1269,23 +1198,15 @@ static int fira_crypto_test_provisioned(void)
 		0x1f, 0x04
 	};
 	int err = -1, r;
-	struct fira_crypto *crypto = NULL;
-	struct fira_crypto_ctx *fira_crypto_ctx;
-	u32 phy_sts_index_init = 0;
+	struct fira_crypto *fira_crypto_ctx;
 	u32 crypto_sts_index_p_sts = 0;
 	u8 sts_v[16];
 	u8 sts_key[16];
 	struct sk_buff *skb = NULL;
 
-	r = fira_crypto_context_init(&param_p_sts, &crypto);
-	if (r != 0 || !crypto || crypto->session_id != param_p_sts.session_id) {
+	r = fira_crypto_context_init(&param_p_sts, &fira_crypto_ctx);
+	if (r != 0 || !fira_crypto_ctx) {
 		pr_err("fira_crypto_context_init fail: %d\n", r);
-		goto end;
-	}
-
-	fira_crypto_ctx = get_session(param_p_sts.session_id);
-	if (!fira_crypto_ctx) {
-		pr_err("cannot get session\n");
 		goto end;
 	}
 
@@ -1312,17 +1233,19 @@ static int fira_crypto_test_provisioned(void)
 		goto end;
 	}
 
-	r = fira_crypto_build_phy_sts_index_init(crypto, &phy_sts_index_init);
+	r = fira_crypto_build_phy_sts_index_init(fira_crypto_ctx);
 	if (r != 0) {
 		pr_err("fira_crypto_build_phy_sts_index_init fail: %d\n", r);
 		goto end;
 	}
-	if (phy_sts_index_init != 0x041f3ba0) {
+	if (fira_crypto_ctx->phy_sts_index_init != 0x041f3ba0) {
 		pr_err("phy_sts_index_init fail\n");
 		goto end;
 	}
 
-	r = fira_crypto_rotate_elements(crypto, phy_sts_index_init);
+	r = fira_crypto_rotate_elements(fira_crypto_ctx,
+					fira_crypto_ctx->phy_sts_index_init);
+
 	if (r != 0) {
 		pr_err("fira_crypto_rotate_elements fail: %d\n", r);
 		goto end;
@@ -1354,7 +1277,7 @@ static int fira_crypto_test_provisioned(void)
 
 	/* Return STS parameters slot 0 */
 	crypto_sts_index_p_sts = 0x041f3ba0;
-	r = fira_crypto_get_sts_params(crypto, crypto_sts_index_p_sts, sts_v,
+	r = fira_crypto_get_sts_params(fira_crypto_ctx, crypto_sts_index_p_sts, sts_v,
 				sizeof(sts_v), sts_key, sizeof(sts_key));
 	if (r != 0) {
 		pr_err("fira_crypto_get_sts_params fail: %d\n", r);
@@ -1381,7 +1304,7 @@ static int fira_crypto_test_provisioned(void)
 	skb_put_data(skb, Header_p_sts, sizeof(Header_p_sts));
 
 	/* Encrypt Header first */
-	r = fira_crypto_encrypt_hie(crypto, skb, 5, 16);
+	r = fira_crypto_encrypt_hie(fira_crypto_ctx, skb, 5, 16);
 	if (r != 0) {
 		pr_err("fira_crypto_encrypt_hie fail: %d\n", r);
 		goto end;
@@ -1402,7 +1325,8 @@ static int fira_crypto_test_provisioned(void)
 
 	skb_put_data(skb, RCM_p_sts, sizeof(RCM_p_sts));
 
-	r = fira_crypto_encrypt_frame(crypto, skb, 28, 0xaaa1, 0x041f3ba0);
+	r = fira_crypto_encrypt_frame(fira_crypto_ctx, skb, 28, 0xaaa1, 0x041f3ba0);
+
 	if (r != 0) {
 		pr_err("fira_crypto_encrypt_frame fail: %d\n", r);
 		goto end;
@@ -1425,7 +1349,7 @@ static int fira_crypto_test_provisioned(void)
 	skb_pull(skb, 28); /* skip header */
 
 	skb_trim(skb, skb->len - FIRA_CRYPTO_AEAD_AUTHSIZE);
-	r = fira_crypto_decrypt_frame(crypto, skb, 28, 0xaaa1, 0x041f3ba0);
+	r = fira_crypto_decrypt_frame(fira_crypto_ctx, skb, 28, 0xaaa1, 0x041f3ba0);
 	if (r != 0) {
 		pr_err("fira_crypto_decrypt_frame fail: %d\n", r);
 		goto end;
@@ -1450,7 +1374,7 @@ static int fira_crypto_test_provisioned(void)
 	skb_put_data(skb, Header_p_sts_Rcv, sizeof(Header_p_sts_Rcv));
 
 	/* Decrypt header */
-	r = fira_crypto_decrypt_hie(crypto, skb, 10, 16);
+	r = fira_crypto_decrypt_hie(fira_crypto_ctx, skb, 10, 16);
 	if (r != 0) {
 		pr_err("fira_crypto_decrypt_hie fail: %d\n", r);
 		goto end;
@@ -1468,8 +1392,8 @@ static int fira_crypto_test_provisioned(void)
 end:
 	if (skb)
 		kfree_skb(skb);
-	if (crypto)
-		fira_crypto_context_deinit(crypto);
+	if (fira_crypto_ctx)
+		fira_crypto_context_deinit(fira_crypto_ctx);
 
 	return err;
 }

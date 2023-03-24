@@ -169,8 +169,8 @@ void fira_frame_rframe_payload_put(struct fira_local *local,
  *
  * Return: true if header is correct.
  */
-bool fira_frame_header_check(const struct fira_local *local,
-			     struct sk_buff *skb,
+bool fira_frame_header_check(struct fira_local *local,
+			     const struct fira_slot *slot, struct sk_buff *skb,
 			     struct mcps802154_ie_get_context *ie_get,
 			     u32 *phy_sts_index, u32 *session_id);
 

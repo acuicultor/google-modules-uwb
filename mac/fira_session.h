@@ -56,7 +56,7 @@ enum fira_controlee_state {
  */
 struct fira_controlee {
 	/**
-	 * @sub_session_id: Sub-session ID used by the controlee.
+	 * @sub_session_id: Sub-session ID for the controlee device.
 	 */
 	__u32 sub_session_id;
 	/**
@@ -71,7 +71,7 @@ struct fira_controlee {
 	/**
 	 * @sub_session_key: Sub-session key used by the controlee.
 	 */
-	char sub_session_key[FIRA_KEY_SIZE_MAX];
+	u8 sub_session_key[FIRA_KEY_SIZE_MAX];
 	/**
 	 * @sub_session: Is the controlee using a sub-session.
 	 */
@@ -84,6 +84,11 @@ struct fira_controlee {
 	 * @range_data_ntf_status: range_data_ntf status of the controlee.
 	 */
 	enum fira_range_data_ntf_status range_data_ntf_status;
+	/*
+	* @crypto: Crypto related variables in the sub-session. Only valid if the current device
+	 * is a controller/initiator and the sts_config is FIRA_STS_MODE_PROVISIONED_INDIVIDUAL_KEY.
+	 */
+	struct fira_crypto *crypto;
 	/**
 	 * @entry: Entry in list of controlees.
 	 */
@@ -140,6 +145,9 @@ struct fira_session_params {
 	u8 vupper64[FIRA_VUPPER64_SIZE];
 	u8 session_key_len;
 	u8 session_key[FIRA_KEY_SIZE_MAX];
+	u32 sub_session_id;
+	u8 sub_session_key_len;
+	u8 sub_session_key[FIRA_KEY_SIZE_MAX];
 	bool key_rotation;
 	u8 key_rotation_rate;
 	bool aoa_result_req;
@@ -295,6 +303,11 @@ struct fira_session {
 		* controller.
 		*/
 		enum fira_range_data_ntf_status ctlr_range_data_ntf_status;
+		 /*
+		 * @responder_specific_crypto: crypto related variables in the sub-session.
+		 * Only valid if the sts_config is FIRA_STS_MODE_PROVISIONED_INDIVIDUAL_KEY.
+		 */
+		struct fira_crypto *responder_specific_crypto;
 	} controlee;
 	/**
 	 * @controller: Group of persistent variable(s) used when session
@@ -363,18 +376,13 @@ struct fira_session {
 	 */
 	void *rx_ctx[FIRA_CONTROLEES_MAX];
 	/**
-	 * @crypto: crypto related variables.
+	 * @crypto: crypto related variables in a session.
 	 */
 	struct fira_crypto *crypto;
 	/**
 	 * @sts: sts related variables.
 	 */
 	struct {
-		/**
-		 * @phy_sts_index_init: Initial phy_sts_index deduced at context init.
-		 */
-		u32 phy_sts_index_init;
-
 		/**
 		 * @last_rotation_block_index: index to the last block where the
 		 * rotation occurred.
@@ -477,26 +485,35 @@ void fira_session_free(struct fira_local *local, struct fira_session *session);
  * @local: FiRa context.
  * @session: Session.
  * @controlees: List of controlees.
+ * @slot_duration_us: Duration of a FiRa slot in us (according to session config).
  * @n_controlees: Number of controlees.
  *
  * Return: 0 or error.
  */
 int fira_session_set_controlees(struct fira_local *local,
 				struct fira_session *session,
-				struct list_head *controlees, int n_controlees);
+				struct list_head *controlees,
+				int slot_duration_us, int n_controlees);
 
 /**
- * fira_session_new_controlees() - Add new controlees.
+ * fira_session_new_controlee() - Add new controlee.
  * @session: Session.
- * @controlees: List of controlees to add.
- * @n_controlees: Number of controlees.
- * @async: True is the controlees must be added asynchronously.
+ * @controlee: Controlee to add.
+ * @slot_duration_us: Duration of a FiRa slot in us (according to session
+ *  config).
+ * @active_session: True if controlee addition should be postponed as ranging
+ *  session is active.
+ *
+ * If succeed, function as taken ownership of the structure and removed it
+ * from the original list.
  *
  * Return: 0 or error.
  */
-int fira_session_new_controlees(struct fira_session *session,
-				struct list_head *controlees, int n_controlees,
-				bool async);
+int fira_session_new_controlee(struct fira_local *local,
+				struct fira_session *session,
+				struct fira_controlee *controlee,
+				int slot_duration_us,
+				bool active_session);
 
 /**
  * fira_session_restart_controlees() - Restart controlee and erase pending del.
@@ -507,15 +524,20 @@ int fira_session_new_controlees(struct fira_session *session,
 void fira_session_restart_controlees(struct fira_session *session);
 
 /**
- * fira_session_del_controlees() - Delete controlees.
+ * fira_session_del_controlee() - Delete controlee.
  * @session: Session.
- * @controlees: List of controlees to delete.
- * @async: True is the controlees must be deleted asynchronously.
+ * @controlee: Controlee to delete.
+ * @active_session: True if controlee deletion should be postponed as ranging
+ *  session is active.
+ *
+ * If succeed, function has removed given controlee from its current list and
+ * freed it.
  *
  * Return: 0 or error.
  */
-int fira_session_del_controlees(struct fira_session *session,
-				struct list_head *controlees, bool async);
+int fira_session_del_controlee(struct fira_session *session,
+				struct fira_controlee *controlee,
+				bool active_session);
 
 /**
  * fira_session_get_controlee() - Get controlee info from short address.

@@ -383,7 +383,7 @@ enum fira_sts_length {
  * @FIRA_RANGE_DATA_NTF_DISABLED: Do not report range data.
  * @FIRA_RANGE_DATA_NTF_ALWAYS: Report range data.
  * @FIRA_RANGE_DATA_NTF_CONFIG_PROXIMITY: Report range data if it is within
- * proximity range defined by proximity parameters.
+ * proximity range defined by proximity parameters
  * defined by proximity parameters (RANGE_DATA_NTF_PROXIMITY_NEAR/FAR).
  * @FIRA_RANGE_DATA_NTF_CONFIG_AOA: Report range data in AoA upper and lower bound.
  * defined by AOA parameters (FIRA_SESSION_PARAM_ATTR_RANGE_DATA_NTF_UPPER/
