@@ -1418,11 +1418,11 @@ static int dw3000_change_tx_rf_port(struct dw3000 *dw, bool use_rf2)
 static int dw3000_change_rx_rf_port(struct dw3000 *dw, bool use_rf2)
 {
 	int rc = 0;
-	u32 val = DW3000_TXRXSWITCH_AUTO;
-
-	if (use_rf2) {
-		val |= DW3000_RF_SWITCH_RX_RF2;
-	}
+	u32 val = DW3000_TXRXSWITCH_AUTO |
+		  ((u32)use_rf2
+		   << DW3000_RF_SWITCH_CTRL_ANT_TXRX_RXPORT_BIT_OFFSET) |
+		  ((u32)use_rf2
+		   << DW3000_RF_SWITCH_CTRL_ANT_TXRX_MODE_OVR_BIT_OFFSET);
 	rc = dw3000_reg_write32(dw, DW3000_RF_SWITCH_CTRL_ID, 0, val);
 	if (!rc)
 		dw->rx_rf2 = use_rf2;
@@ -6471,13 +6471,14 @@ int dw3000_set_tx_antenna(struct dw3000 *dw, int ant_set_id)
 			 ant_set_id);
 		return -EINVAL;
 	}
-	/* Early return if no change */
-	if (ant_idx1 == config->ant[0])
-		return 0;
 	/* Retrieve antenna GPIO configuration from calibration data */
 	ant_calib = &dw->calib_data.ant[ant_idx1];
+	/* Early return if no change */
+	if (ant_idx1 == config->ant[ant_calib->port])
+		return 0;
+
 	/* switching to RF2 port for TX if necessary  */
-	if (ant_calib->port == 1 || dw->tx_rf2)
+	if ((ant_calib->port == 1) || (dw->tx_rf2))
 		dw3000_change_tx_rf_port(dw, ant_calib->port == 1);
 
 	/* Set GPIO state according config to select this antenna */
@@ -6522,12 +6523,6 @@ int dw3000_set_rx_antennas(struct dw3000 *dw, int ant_set_id, bool pdoa_enabled,
 		port = ant_calib->port; /* Save port for later check */
 		if  (((ant_calib->port == 1) || dw->rx_rf2) && ant_idx2 < 0) {
 			dw3000_change_rx_rf_port(dw, true);
-		} else if (ant_calib->port == 1 && ant_idx2 > 0) {
-			if (frame_idx == 5) {
-				dw3000_change_rx_rf_port(dw, true);
-			} else {
-				dw3000_change_rx_rf_port(dw, false);
-			}
 		} else {
 			dw3000_change_rx_rf_port(dw, false);
 		}

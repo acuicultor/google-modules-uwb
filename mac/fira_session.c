@@ -1117,6 +1117,15 @@ static bool range_data_notif_update(struct fira_local *local,
 							   ri->short_addr);
 
 			fira_session_set_range_data_ntf_status(session, ri);
+			if (!controlee) {
+				/*
+				 * This case can happen in Contention Based mode.
+				 * In this mode, controlees are unknown. Let's notify.
+				 */
+				ri->notify = true;
+				send_report = true;
+				continue;
+			}
 			ctlee_status = controlee->range_data_ntf_status;
 			ri->notify = send_ranging_data(
 				config, ri->range_data_ntf_status,
