@@ -4608,6 +4608,13 @@ static int dw3000_setdwstate(struct dw3000 *dw, enum operational_state state)
 		 * - enable configuration copy from AON memory to host registers.
 		 * - set ONW_GO2IDLE to get DW3000_OP_STATE_IDLE_PLL on wakeup.
 		 */
+		/* Step 1.1
+		 * - clear DW3000_RUNSAR bit from DW3000_AON_DIG_CFG_ID
+		 * - turn off auto PGF cal on wake up
+		 */
+		dw->data.sleep_mode &= ~DW3000_RUNSAR;
+		dw->data.sleep_mode |= DW3000_PGFCAL;
+
 		rc = dw3000_reg_write16(
 			dw, DW3000_AON_DIG_CFG_ID, 0,
 			dw->data.sleep_mode |

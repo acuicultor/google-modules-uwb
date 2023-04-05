@@ -212,11 +212,10 @@ static int dw3000_e0_check_tx_ok(struct dw3000 *dw)
  */
 int dw3000_e0_prog_ldo_and_bias_tune(struct dw3000 *dw)
 {
-	const u16 bias_mask = DW3000_BIAS_CTRL_DIG_BIAS_DAC_ULV_BIT_MASK;
 	struct dw3000_local_data *local = &dw->data;
 	struct dw3000_otp_data *otp = &dw->otp_data;
-	u16 bias_tune = (otp->bias_tune >> 16) & bias_mask;
-	if (otp->ldo_tune_lo && otp->ldo_tune_hi && bias_tune) {
+
+	if (otp->ldo_tune_lo && otp->ldo_tune_hi && otp->bias_tune) {
 		dw3000_reg_or16(dw, DW3000_NVM_CFG_ID, 0, DW3000_LDO_BIAS_KICK);
 		/* Save the kicks for the on-wake configuration */
 		local->sleep_mode |= DW3000_LOADLDO | DW3000_LOADBIAS;
