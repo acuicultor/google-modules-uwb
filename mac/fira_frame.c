@@ -766,13 +766,6 @@ fira_frame_result_report_fill_ranging_info(struct fira_local *local,
 		ranging_info->remote_aoa_elevation_pi = get_unaligned_le16(p);
 		p += sizeof(s16);
 	}
-	if (neg_tof_present) {
-		/* When negative ToF is present at end of frame,
-		 * ToF read ahead MUST be 0, so, is safe to overwrite */
-		ranging_info->tof_rctu = -get_unaligned_le32(p);
-		p += sizeof(u32);
-	}
-
 	if (aoa_fom_present) {
 		ranging_info->remote_aoa_fom_present = true;
 		if (aoa_azimuth_present)
@@ -780,6 +773,13 @@ fira_frame_result_report_fill_ranging_info(struct fira_local *local,
 		if (aoa_elevation_present)
 			ranging_info->remote_aoa_elevation_fom = *p++;
 	}
+	if (neg_tof_present) {
+		/* When negative ToF is present at end of frame,
+		 * ToF read ahead MUST be 0, so, is safe to overwrite */
+		ranging_info->tof_rctu = -get_unaligned_le32(p);
+		p += sizeof(u32);
+	}
+
 	return true;
 }
 
